@@ -534,6 +534,35 @@ function bookingModal(walkin = false) {
   };
 }
 
+function marketingReferenceCampaigns() {
+  return [
+    { name: 'Hair colour refresh reminder', channel: 'WhatsApp', audience: '118 colour clients', status: 'Sent', tracking: '94% delivered · 26 replies' },
+    { name: 'Botox maintenance follow-up', channel: 'WhatsApp', audience: '46 eligible clients', status: 'Sent', tracking: '89% delivered · 9 bookings' },
+    { name: 'Birthday glow edit', channel: 'Email', audience: '72 birthday clients', status: 'Scheduled', tracking: 'Send date · 18 Aug' },
+    { name: 'Bridal season showcase', channel: 'Instagram', audience: 'Local bridal audience', status: 'Sent', tracking: '4.8k reach · 31 leads' },
+    { name: 'Nail art trend reel', channel: 'Instagram', audience: 'Nail service followers', status: 'Draft', tracking: 'Ready to review' },
+    { name: 'Next-visit reminder', channel: 'SMS', audience: '54 due this week', status: 'Sent', tracking: '98% delivered · 14 bookings' },
+    { name: 'Review request follow-up', channel: 'Google Business Profile', audience: '38 recent guests', status: 'Sent', tracking: '21 requests · 8 reviews' },
+    { name: 'Monsoon self-care offer', channel: 'Salon app', audience: '126 active clients', status: 'Draft', tracking: 'Audience saved' }
+  ];
+}
+
+function marketing() {
+  const savedCampaigns = local('campaigns');
+  const references = marketingReferenceCampaigns().slice(0, Math.max(0, 8 - savedCampaigns.length)).map(campaign => ({ ...campaign, reference: true }));
+  const campaigns = [...savedCampaigns, ...references];
+  const campaignRow = campaign => {
+    const tracking = campaign.tracking || (campaign.status === 'Draft' ? 'Audience saved · ready to send' : 'Delivery and responses will appear here');
+    const action = campaign.reference
+      ? '<button class="text-link" data-marketing-reference>View reference →</button>'
+      : `<button data-campaign="${campaign.id}">${campaign.status === 'Draft' ? 'Send' : 'View results'} →</button>`;
+    return `<tr><td><strong>${campaign.name}${campaign.reference ? ' <span class="marketing-reference">Reference</span>' : ''}</strong></td><td><span class="marketing-channel">${campaign.channel}</span></td><td>${campaign.audience}</td><td><span class="campaign-status"><i class="dot"></i>${campaign.status}</span></td><td><span class="marketing-tracking">${tracking}</span></td><td>${action}</td></tr>`;
+  };
+  layout(`${pageHead('CLIENT MARKETING', 'Marketing', 'Plan campaigns, follow performance, and take action from one place.', `<button class="marketing-planning-widget" id="open-marketing-planning"><span>✦</span><span><strong>Insightful marketing planning</strong><small>Plan your next best campaign</small></span><i>→</i></button><button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel marketing-table-panel"><div class="table-head"><div><h2>Campaigns, tracking & actions</h2><p>${savedCampaigns.length ? 'Your saved campaigns plus reference examples for planning.' : 'Reference examples for planning across your main channels.'}</p></div><span class="marketing-count">${campaigns.length} campaigns</span></div><table class="data-table marketing-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th>TRACKING</th><th>ACTION</th></tr></thead><tbody>${campaigns.map(campaignRow).join('')}</tbody></table></article>`);
+  document.querySelectorAll('[data-marketing-reference]').forEach(button => button.addEventListener('click', () => alertToast('Reference campaign shown for planning only.')));
+  document.getElementById('open-marketing-planning')?.addEventListener('click', () => alertToast('Insightful marketing planning will be configured next.'));
+}
+
 render();
 
 function scheduleHtml(appointments) {
