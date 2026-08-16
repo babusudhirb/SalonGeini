@@ -133,7 +133,10 @@ function displayModeControl() {
 
 function applyDisplayDensity() {
   const clientTable = app.querySelector('.data-table');
-  if (view === 'clients' && clientTable) clientTable.classList.add('clients-density-table', app.querySelector('.client-follow-up-button')?.classList.contains('primary') ? 'is-follow-up' : '');
+  if (view === 'clients' && clientTable) {
+    clientTable.classList.add('clients-density-table');
+    if (app.querySelector('.client-follow-up-button')?.classList.contains('primary')) clientTable.classList.add('is-follow-up');
+  }
   if (state.preferences.displayMode !== 'insight') return;
   const appointments = local('appointments');
   const invoices = local('invoices');
