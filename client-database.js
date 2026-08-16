@@ -11,6 +11,19 @@ function serviceFollowUpDays(treatment) {
   return null;
 }
 
+function upcomingBirthday(customer, today = new Date()) {
+  const match = String(customer?.dob || '').match(/^(\d{2})\/(\d{2})$/);
+  if (!match) return null;
+  const day = Number(match[1]);
+  const month = Number(match[2]) - 1;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let birthday = new Date(start.getFullYear(), month, day);
+  if (birthday.getMonth() !== month || birthday.getDate() !== day) return null;
+  if (birthday < start) birthday = new Date(start.getFullYear() + 1, month, day);
+  const daysUntil = Math.round((birthday - start) / 86400000);
+  return daysUntil <= 21 ? { birthdayDate: birthday, daysUntil } : null;
+}
+
 function followUpClients() {
   const latestServices = new Map();
   state.appointments
@@ -37,15 +50,27 @@ function followUpClients() {
     dueByClient.set(customer.id, entry);
   });
 
-  return [...dueByClient.values()].sort((first, second) => Math.max(...second.dueServices.map(item => item.daysOverdue)) - Math.max(...first.dueServices.map(item => item.daysOverdue)));
+  local('clients').forEach(customer => {
+    const birthday = upcomingBirthday(customer, today);
+    if (!birthday) return;
+    const entry = dueByClient.get(customer.id) || { client: customer, dueServices: [] };
+    entry.birthday = birthday;
+    dueByClient.set(customer.id, entry);
+  });
+
+  const priority = entry => Math.max(0, ...entry.dueServices.map(item => item.daysOverdue), entry.birthday ? 21 - entry.birthday.daysUntil : 0);
+  return [...dueByClient.values()].sort((first, second) => priority(second) - priority(first));
 }
 
 function followUpClientRows(entries) {
   const formatDate = value => new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short' }).format(value);
-  return entries.length ? entries.map(({ client: entry, dueServices }) => {
+  return entries.length ? entries.map(({ client: entry, dueServices, birthday }) => {
     const leadService = dueServices[0];
     const serviceNames = dueServices.map(item => item.treatment?.name || 'Service').join(', ');
-    return `<tr><td><strong>${entry.name} <span class="badge red">Follow-up required</span></strong><small>${entry.phone}</small></td><td><strong>${serviceNames}</strong><small>Due ${formatDate(leadService.dueDate)}</small></td><td>${formatDate(new Date(`${appointmentDate(leadService.appointment)}T00:00:00`))}<small>Last completed visit</small></td><td><span class="follow-up-overdue">${leadService.daysOverdue ? `${leadService.daysOverdue} days overdue` : 'Due today'}</span></td><td><button data-client="${entry.id}">View insights →</button></td></tr>`;
+    const reason = [serviceNames && `<strong>${serviceNames}</strong><small>Service follow-up due</small>`, birthday && `<strong>Birthday outreach</strong><small>${birthday.daysUntil ? `Birthday in ${birthday.daysUntil} day${birthday.daysUntil === 1 ? '' : 's'} · ${formatDate(birthday.birthdayDate)}` : 'Birthday today'}</small>`].filter(Boolean).join('');
+    const lastVisit = leadService ? `${formatDate(new Date(`${appointmentDate(leadService.appointment)}T00:00:00`))}<small>Last completed visit</small>` : '—<small>No service follow-up due</small>';
+    const urgency = [leadService && `<span class="follow-up-overdue">${leadService.daysOverdue ? `${leadService.daysOverdue} days overdue` : 'Service due today'}</span>`, birthday && `<span class="follow-up-birthday">${birthday.daysUntil ? `Birthday in ${birthday.daysUntil} days` : 'Birthday today'}</span>`].filter(Boolean).join('<br>');
+    return `<tr><td><strong>${entry.name} <span class="badge red">Follow-up required</span></strong><small>${entry.phone}</small></td><td>${reason}</td><td>${lastVisit}</td><td>${urgency}</td><td><button data-client="${entry.id}">View insights →</button></td></tr>`;
   }).join('') : '<tr><td colspan="5"><div class="empty">No client follow-ups are due right now.</div></td></tr>';
 }
 
@@ -64,7 +89,7 @@ function clients() {
   const entries = isFollowUpView ? followUps : local('clients').sort((first, second) => first.name.localeCompare(second.name));
   const branch = currentBranch();
   const qrUrl = guestOnboardingQrUrl(branch);
-  layout(`<div class="page-head clients-page-head"><div><p class="eyebrow">CLIENT DIRECTORY</p><h1>Clients</h1><p>Know every preference, visit, and opportunity.</p></div><div class="actions clients-actions"><button class="btn secondary" id="upload-client-database">Upload database</button><button class="btn secondary" id="download-client-database">Download clients</button><button class="btn ${isFollowUpView ? 'primary' : 'secondary'} client-follow-up-button" id="show-follow-up-clients">Clients for follow-up${followUps.length ? ` · ${followUps.length}` : ''}</button><button class="btn primary" id="open-guest-onboarding">Guest Onboarding</button><div class="guest-qr guest-qr-action" title="Guest onboarding QR code for ${branch.name}"><img src="${qrUrl}" alt="Guest onboarding QR code for ${branch.name}"><span><strong>Guest QR</strong><small>${branch.name}</small><button class="text-link" id="download-guest-qr">Download</button></span></div></div></div><input id="client-database-file" type="file" accept=".xlsx,.csv" hidden><article class="panel table-panel"><div class="table-head"><div><h2>${isFollowUpView ? 'Clients for follow-up' : 'All clients'}</h2><p>${isFollowUpView ? 'Clients whose completed service is now due again.' : `${entries.length} clients at ${branch.name}`}</p></div><div class="client-table-actions">${isFollowUpView ? '<button class="text-link" id="show-all-clients">View all clients</button>' : ''}<input class="search" id="client-search" placeholder="Search clients" /></div></div><table class="data-table"><thead>${isFollowUpView ? '<tr><th>CLIENT</th><th>SERVICE DUE</th><th>LAST VISIT</th><th>FOLLOW-UP</th><th></th></tr>' : '<tr><th>CLIENT</th><th>MOBILE & INSTA</th><th>VISIT INFLUENCED BY</th><th>VISITS</th><th>LIFETIME SPEND</th><th></th></tr>'}</thead><tbody id="client-table">${isFollowUpView ? followUpClientRows(entries) : clientTableRows(entries)}</tbody></table></article>`);
+  layout(`<div class="page-head clients-page-head"><div><p class="eyebrow">CLIENT DIRECTORY</p><h1>Clients</h1><p>Know every preference, visit, and opportunity.</p></div><div class="actions clients-actions"><button class="btn secondary" id="upload-client-database">Upload database</button><button class="btn secondary" id="download-client-database">Download clients</button><button class="btn ${isFollowUpView ? 'primary' : 'secondary'} client-follow-up-button" id="show-follow-up-clients">Clients for follow-up${followUps.length ? ` · ${followUps.length}` : ''}</button><button class="btn primary" id="open-guest-onboarding">Guest Onboarding</button><div class="guest-qr guest-qr-action" title="Guest onboarding QR code for ${branch.name}"><img src="${qrUrl}" alt="Guest onboarding QR code for ${branch.name}"><span><strong>Guest QR</strong><small>${branch.name}</small><button class="text-link" id="download-guest-qr">Download</button></span></div></div></div><input id="client-database-file" type="file" accept=".xlsx,.csv" hidden><article class="panel table-panel"><div class="table-head"><div><h2>${isFollowUpView ? 'Clients for follow-up' : 'All clients'}</h2><p>${isFollowUpView ? 'Clients with a service due or birthday in the next three weeks.' : `${entries.length} clients at ${branch.name}`}</p></div><div class="client-table-actions">${isFollowUpView ? '<button class="text-link" id="show-all-clients">View all clients</button>' : ''}<input class="search" id="client-search" placeholder="Search clients" /></div></div><table class="data-table"><thead>${isFollowUpView ? '<tr><th>CLIENT</th><th>FOLLOW-UP REASON</th><th>LAST VISIT</th><th>FOLLOW-UP</th><th></th></tr>' : '<tr><th>CLIENT</th><th>MOBILE & INSTA</th><th>VISIT INFLUENCED BY</th><th>VISITS</th><th>LIFETIME SPEND</th><th></th></tr>'}</thead><tbody id="client-table">${isFollowUpView ? followUpClientRows(entries) : clientTableRows(entries)}</tbody></table></article>`);
   document.getElementById('upload-client-database')?.addEventListener('click', () => document.getElementById('client-database-file').click());
   document.getElementById('download-client-database')?.addEventListener('click', exportClientsDatabase);
   document.getElementById('client-database-file')?.addEventListener('change', event => importClientsDatabase(event.target.files?.[0]));
@@ -124,6 +149,7 @@ function clientInsights(id) {
   const bookedVisit = visits.filter(appointment => appointment.status === 'confirmed')[0];
   const followUp = followUpClients().find(item => item.client.id === data.id);
   const dueServiceNames = followUp?.dueServices.map(item => item.treatment?.name || 'Service').join(', ');
+  const followUpDetail = [dueServiceNames && `Service due · ${dueServiceNames}`, followUp?.birthday && (followUp.birthday.daysUntil ? `Birthday in ${followUp.birthday.daysUntil} days` : 'Birthday today')].filter(Boolean).join(' · ');
   const totalSpend = invoices.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0) || Number(data.spent || 0);
   const averageSpend = data.visits ? Math.round(totalSpend / data.visits) : 0;
   const recordedRating = Number(data.satisfaction);
@@ -145,7 +171,7 @@ function clientInsights(id) {
         <div><span>Favourite service</span><strong>${favouriteService ? `${favouriteService[0]} · ${favouriteService[1]} visit${favouriteService[1] === 1 ? '' : 's'}` : 'Still learning'}</strong></div>
         <div><span>Preferred team member</span><strong>${favouriteStaff ? favouriteStaff[0] : 'Still learning'}</strong></div>
         <div><span>Next booked visit</span><strong>${bookedVisit ? `${formatDate(appointmentDate(bookedVisit))} · ${bookedVisit.time}` : 'No booking scheduled'}</strong></div>
-        <div><span>Follow-up</span><strong>${followUp ? `Required · ${dueServiceNames}` : 'Not required'}</strong></div>
+        <div><span>Follow-up</span><strong>${followUp ? `Required · ${followUpDetail}` : 'Not required'}</strong></div>
         <div><span>How they found you</span><strong>${data.influencedBy || 'Not recorded'}</strong></div>
       </div></section>
       <section class="client-insight-section client-preferences"><div class="client-insight-section-head"><div><h3>Preferences & notes</h3><p>Give the team the context they need.</p></div></div><p>${data.note || 'No preferences, allergies, or special requests have been recorded yet.'}</p>${data.dob ? `<small>Birthday: ${data.dob}</small>` : ''}</section>
