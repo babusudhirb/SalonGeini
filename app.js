@@ -65,6 +65,7 @@ if (!['normal', 'insight'].includes(state.preferences.displayMode)) state.prefer
 let view = new URLSearchParams(window.location.search).get('view') || 'overview';
 let selectedAppointment = null;
 let selectedPayment = 'UPI';
+let walkInDraft = { name: '', phone: '', date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [] };
 let marketingCampaignPage = 0;
 let reportView = 'sales';
 let calendarMode = new URLSearchParams(window.location.search).get('calendar') || 'today';
@@ -731,11 +732,98 @@ function appointmentListHtml(appointments) {
   }).join('') : '<div class="empty">No appointments match this view.</div>'}</div>`;
 }
 
+function freshWalkInItem() {
+  const firstService = state.services.find(item => !item.availableBranches || item.availableBranches.includes(state.activeBranch)) || state.services[0];
+  const firstStaff = local('staff')[0] || state.staff[0];
+  return { serviceId: firstService?.id || '', staffId: firstStaff?.id || '', quantity: 1, price: firstService?.price || 0, discount: 0 };
+}
+
+function walkInTotals(items = walkInDraft.items) {
+  const subtotal = items.reduce((total, item) => {
+    const lineValue = Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1);
+    return total + Math.max(0, lineValue - Math.min(lineValue, Math.max(0, Number(item.discount) || 0)));
+  }, 0);
+  const tax = Math.round(subtotal * (Number(state.organisation.tax) || 0) / 100);
+  return { subtotal: Math.round(subtotal), tax, total: Math.round(subtotal + tax) };
+}
+
+function walkInLine(item, index) {
+  const services = state.services.filter(entry => !entry.availableBranches || entry.availableBranches.includes(state.activeBranch));
+  const team = local('staff');
+  const lineTotal = Math.max(0, (Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1) - (Number(item.discount) || 0));
+  return `<div class="walkin-line" data-walkin-line="${index}"><label class="walkin-line-service">Service<select data-walkin-item="serviceId" data-walkin-index="${index}">${services.map(entry => `<option value="${entry.id}" ${Number(item.serviceId) === entry.id ? 'selected' : ''}>${entry.name}</option>`).join('')}</select></label><label>Staff<select data-walkin-item="staffId" data-walkin-index="${index}">${team.map(member => `<option value="${member.id}" ${Number(item.staffId) === member.id ? 'selected' : ''}>${member.name}</option>`).join('')}</select></label><label>Qty<input type="number" min="1" value="${item.quantity}" data-walkin-item="quantity" data-walkin-index="${index}"></label><label>Price<input type="number" min="0" value="${item.price}" data-walkin-item="price" data-walkin-index="${index}"></label><label>Discount<input type="number" min="0" value="${item.discount || 0}" data-walkin-item="discount" data-walkin-index="${index}"></label><div class="walkin-line-total"><small>Line total</small><strong data-walkin-line-total="${index}">${money(lineTotal)}</strong></div>${walkInDraft.items.length > 1 ? `<button class="icon-btn" type="button" title="Remove service" data-remove-walkin-line="${index}">×</button>` : ''}</div>`;
+}
+
+function checkoutPreview(totals, payment, invoiceLabel = 'New invoice') {
+  return `<article class="panel checkout-preview"><div class="panel-head"><div><h2>Invoice preview</h2><p>${currentBranch().name} · ${invoiceLabel}</p></div></div><div class="checkout-summary"><div><span>Services</span><strong data-walkin-subtotal>${money(totals.subtotal)}</strong></div><div><span>GST (${state.organisation.tax}%)</span><strong data-walkin-tax>${money(totals.tax)}</strong></div><div class="checkout-summary-total"><span>Total</span><strong data-walkin-total>${money(totals.total)}</strong></div></div><label class="eyebrow">PAYMENT METHOD</label><div class="payment-methods">${['UPI', 'Card', 'Cash'].map(method => `<button type="button" class="${payment === method ? 'active' : ''}" data-walkin-payment="${method}">${method}</button>`).join('')}</div><p class="checkout-whatsapp-note"><span>WhatsApp</span> Invoice will be queued to the client after payment.</p></article>`;
+}
+
+function refreshWalkInPreview() {
+  const totals = walkInTotals();
+  document.querySelector('[data-walkin-subtotal]')?.replaceChildren(document.createTextNode(money(totals.subtotal)));
+  document.querySelector('[data-walkin-tax]')?.replaceChildren(document.createTextNode(money(totals.tax)));
+  document.querySelector('[data-walkin-total]')?.replaceChildren(document.createTextNode(money(totals.total)));
+  document.querySelectorAll('[data-walkin-line-total]').forEach(node => {
+    const item = walkInDraft.items[Number(node.dataset.walkinLineTotal)];
+    const value = Math.max(0, (Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1) - (Number(item.discount) || 0));
+    node.textContent = money(value);
+  });
+  const collect = document.getElementById('collect-walkin-payment');
+  if (collect) collect.textContent = `Collect ${money(totals.total)}`;
+}
+
+function saveWalkInInvoice() {
+  const name = walkInDraft.name.trim(), phone = walkInDraft.phone.trim();
+  if (!name || !phone) return alertToast('Enter the client name and mobile number first.');
+  if (!walkInDraft.items.length || walkInDraft.items.some(item => !item.serviceId)) return alertToast('Add at least one service first.');
+  const normalizedPhone = phone.replace(/\D/g, '');
+  let customer = local('clients').find(entry => entry.phone.replace(/\D/g, '') === normalizedPhone);
+  if (!customer) {
+    customer = { id: nextId('clients'), branch: state.activeBranch, name, phone, visits: 0, spent: 0, birthday: '', notes: '' };
+    state.clients.push(customer);
+  }
+  const totals = walkInTotals();
+  customer.name = name; customer.phone = phone; customer.visits = (Number(customer.visits) || 0) + 1; customer.spent = (Number(customer.spent) || 0) + totals.total;
+  state.invoices.push({ id: nextId('invoices'), clientId: customer.id, appointmentId: null, total: totals.total, subtotal: totals.subtotal, tax: totals.tax, payment: walkInDraft.payment, branch: state.activeBranch, date: walkInDraft.date, source: 'walk-in', lines: walkInDraft.items.map(item => ({ ...item })), whatsAppStatus: 'Queued', whatsAppSentAt: new Date().toISOString() });
+  walkInDraft = { name: '', phone: '', date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [freshWalkInItem()] };
+  persist(); render(); alertToast('Payment collected. Invoice queued for WhatsApp.');
+}
+
+function completeAppointmentCheckout(appointment) {
+  const treatment = service(appointment.serviceId), total = walkInTotals([{ quantity: 1, price: treatment.price, discount: 0 }]);
+  appointment.paid = true; appointment.status = 'completed';
+  const customer = client(appointment.clientId);
+  customer.visits = (Number(customer.visits) || 0) + 1; customer.spent = (Number(customer.spent) || 0) + total.total;
+  state.invoices.push({ id: nextId('invoices'), clientId: customer.id, appointmentId: appointment.id, total: total.total, subtotal: total.subtotal, tax: total.tax, payment: selectedPayment, branch: state.activeBranch, date: appointmentDate(appointment), source: 'appointment', lines: [{ serviceId: treatment.id, staffId: appointment.staffId, quantity: 1, price: treatment.price, discount: 0 }], whatsAppStatus: 'Queued', whatsAppSentAt: new Date().toISOString() });
+  selectedAppointment = null; persist(); render(); alertToast('Payment collected. Invoice queued for WhatsApp.');
+}
+
 function checkout() {
+  if (!walkInDraft.items.length) walkInDraft.items.push(freshWalkInItem());
   const entries = local('appointments').filter(appointment => !appointment.paid && appointment.status !== 'cancelled');
   const current = entries.find(appointment => appointment.id === selectedAppointment) || entries[0];
   selectedAppointment = current?.id || null;
-  layout(`${pageHead('POINT OF SALE', 'Checkout', 'Close appointments with a clear, accurate bill.')}${current ? `<div class="checkout-layout"><article class="panel"><div class="panel-head"><div><h2>Ready to checkout</h2><p>Select an appointment to prepare its bill.</p></div></div><div class="checkout-list">${entries.map(appointment => `<button class="${current.id === appointment.id ? 'selected' : ''}" data-checkout="${appointment.id}"><span class="avatar">${initials(client(appointment.clientId).name)}</span><span><strong>${client(appointment.clientId).name}</strong><small>${appointment.time} · ${service(appointment.serviceId).name} with ${staff(appointment.staffId).name}</small></span><strong>${money(service(appointment.serviceId).price)}</strong></button>`).join('')}</div></article><article class="panel"><div class="panel-head"><div><h2>Invoice preview</h2><p>${currentBranch().name} · #SG-${1000 + current.id}</p></div></div><div class="bill-lines"><div class="bill-line"><span>${service(current.serviceId).name}</span><strong>${money(service(current.serviceId).price)}</strong></div><div class="bill-line"><span>GST (${state.organisation.tax}%)</span><strong>${money(service(current.serviceId).price * state.organisation.tax / 100)}</strong></div></div><div class="bill-total"><span>Total</span><span>${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</span></div><label class="eyebrow">PAYMENT METHOD</label><div class="payment-methods">${['UPI', 'Card', 'Cash'].map(method => `<button class="${selectedPayment === method ? 'active' : ''}" data-payment="${method}">${method}</button>`).join('')}</div><button class="btn primary full" data-action="pay">Collect ${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</button></article></div>` : '<article class="panel"><div class="empty">All appointments are paid or cancelled. Great work!</div></article>'}`);
+  const walkInPanel = `<section class="checkout-section walkin-checkout-section"><div class="section-heading"><div><p class="eyebrow">WALK-IN BILLING</p><h2>Create a new bill</h2><p>Find a client or add a new one, then collect payment.</p></div></div><div class="walkin-billing-layout"><article class="panel walkin-bill-form"><form id="walkin-checkout-form"><div class="walkin-client-grid"><label>Find saved client<input id="walkin-client-search" list="walkin-client-options" placeholder="Search name or mobile"></label><label>Client name<input required value="${walkInDraft.name}" data-walkin-field="name" placeholder="Client name"></label><label>Mobile number<input required inputmode="tel" value="${walkInDraft.phone}" data-walkin-field="phone" placeholder="Mobile number"></label><label>Date<input type="date" value="${walkInDraft.date}" data-walkin-field="date"></label></div><datalist id="walkin-client-options">${local('clients').map(entry => `<option value="${entry.name}" label="${entry.phone}"></option><option value="${entry.phone}" label="${entry.name}"></option>`).join('')}</datalist><div class="walkin-line-list">${walkInDraft.items.map(walkInLine).join('')}</div><button class="btn secondary walkin-add-line" type="button" data-add-walkin-line>+ Add service</button></form></article><div class="checkout-preview-stack">${checkoutPreview(walkInTotals(), walkInDraft.payment)}<button class="btn primary full" id="collect-walkin-payment">Collect ${money(walkInTotals().total)}</button></div></div></section>`;
+  const appointmentPanel = `<section class="checkout-section checkout-appointment-section"><div class="section-heading"><div><p class="eyebrow">APPOINTMENT CHECKOUTS</p><h2>Ready to checkout</h2><p>These services are pulled directly from today’s appointments.</p></div><span class="marketing-plan-count">${entries.length} ready</span></div>${current ? `<div class="checkout-appointment-layout"><article class="panel"><div class="appointment-checkout-list">${entries.map(appointment => { const treatment = service(appointment.serviceId); return `<button class="appointment-checkout-row ${current.id === appointment.id ? 'selected' : ''}" data-appointment-checkout="${appointment.id}"><span class="appointment-checkout-mark">${treatment.icon || '✦'}</span><span><strong>${client(appointment.clientId).name}</strong><small>${appointment.time} · ${treatment.name} with ${staff(appointment.staffId).name}</small></span><b>${money(treatment.price)}</b></button>`; }).join('')}</div></article><article class="panel checkout-preview"><div class="panel-head"><div><h2>Appointment invoice</h2><p>${currentBranch().name} · #SG-${1000 + current.id}</p></div></div><div class="checkout-summary"><div><span>${service(current.serviceId).name}</span><strong>${money(service(current.serviceId).price)}</strong></div><div><span>GST (${state.organisation.tax}%)</span><strong>${money(service(current.serviceId).price * state.organisation.tax / 100)}</strong></div><div class="checkout-summary-total"><span>Total</span><strong>${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</strong></div></div><label class="eyebrow">PAYMENT METHOD</label><div class="payment-methods">${['UPI', 'Card', 'Cash'].map(method => `<button type="button" class="${selectedPayment === method ? 'active' : ''}" data-appointment-payment="${method}">${method}</button>`).join('')}</div><p class="checkout-whatsapp-note"><span>WhatsApp</span> Invoice will be queued to the client after payment.</p><button class="btn primary full" id="collect-appointment-payment">Collect ${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</button></article></div>` : '<article class="panel"><div class="empty">No appointment payments are waiting. Walk-in billing is ready above.</div></article>'}</section>`;
+  layout(`${pageHead('POINT OF SALE', 'Checkout', 'Create quick walk-in bills and close appointment payments.')}${walkInPanel}${appointmentPanel}`);
+  document.querySelectorAll('[data-walkin-field]').forEach(input => input.addEventListener('input', event => { walkInDraft[event.target.dataset.walkinField] = event.target.value; }));
+  document.querySelectorAll('[data-walkin-item]').forEach(input => input.addEventListener(input.tagName === 'SELECT' ? 'change' : 'input', event => {
+    const index = Number(event.target.dataset.walkinIndex), field = event.target.dataset.walkinItem;
+    walkInDraft.items[index][field] = field === 'serviceId' || field === 'staffId' ? Number(event.target.value) : Number(event.target.value);
+    if (field === 'serviceId') { walkInDraft.items[index].price = service(event.target.value).price; render(); return; }
+    refreshWalkInPreview();
+  }));
+  document.getElementById('walkin-client-search')?.addEventListener('change', event => {
+    const match = local('clients').find(entry => entry.name === event.target.value || entry.phone === event.target.value);
+    if (match) { walkInDraft.name = match.name; walkInDraft.phone = match.phone; render(); }
+  });
+  document.querySelector('[data-add-walkin-line]')?.addEventListener('click', () => { walkInDraft.items.push(freshWalkInItem()); render(); });
+  document.querySelectorAll('[data-remove-walkin-line]').forEach(button => button.addEventListener('click', () => { walkInDraft.items.splice(Number(button.dataset.removeWalkinLine), 1); render(); }));
+  document.querySelectorAll('[data-walkin-payment]').forEach(button => button.addEventListener('click', () => { walkInDraft.payment = button.dataset.walkinPayment; render(); }));
+  document.getElementById('collect-walkin-payment')?.addEventListener('click', saveWalkInInvoice);
+  document.querySelectorAll('[data-appointment-checkout]').forEach(button => button.addEventListener('click', () => { selectedAppointment = Number(button.dataset.appointmentCheckout); render(); }));
+  document.querySelectorAll('[data-appointment-payment]').forEach(button => button.addEventListener('click', () => { selectedPayment = button.dataset.appointmentPayment; render(); }));
+  document.getElementById('collect-appointment-payment')?.addEventListener('click', () => completeAppointmentCheckout(current));
 }
 
 function bookingModal(walkin = false) {
