@@ -1,27 +1,16 @@
 const SERVICE_CATEGORIES = [
-  { id: 'cut-style', name: 'Haircut & Styling', icon: '✂', services: [
-    { name: 'Haircut & style', duration: 60, price: 1800 }, { name: 'Blow-dry', duration: 45, price: 1200 }, { name: 'Hair wash & styling', duration: 45, price: 1000 }
-  ] },
-  { id: 'colour', name: 'Hair Colour', icon: '✦', services: [
-    { name: 'Root touch-up', duration: 90, price: 2500 }, { name: 'Global hair colour', duration: 120, price: 4200, length: true }, { name: 'Balayage', duration: 180, price: 6800, length: true }, { name: 'Highlights', duration: 150, price: 5500, length: true }
-  ] },
-  { id: 'care-spa', name: 'Hair Care & Spa', icon: '◌', services: [
-    { name: 'Hair treatment', duration: 75, price: 2500, length: true }, { name: 'Hair spa', duration: 75, price: 2200, length: true }, { name: 'Keratin treatment', duration: 180, price: 7500, length: true }
-  ] },
-  { id: 'skin', name: 'Skin & Facial', icon: '◐', services: [
-    { name: 'Signature facial', duration: 90, price: 3200 }, { name: 'Clean-up', duration: 60, price: 1600 }, { name: 'De-tan', duration: 45, price: 1200 }
-  ] },
-  { id: 'nails', name: 'Nails', icon: '◈', services: [
-    { name: 'Gel manicure', duration: 60, price: 1600 }, { name: 'Gel pedicure', duration: 75, price: 2000 }, { name: 'Nail extensions', duration: 120, price: 3000 }
-  ] },
-  { id: 'makeup', name: 'Makeup', icon: '✧', services: [
-    { name: 'Party makeup', duration: 75, price: 3500 }, { name: 'Bridal makeup', duration: 120, price: 8500 }, { name: 'Saree draping', duration: 30, price: 900 }
-  ] }
+  { id: 'hair', name: 'Hair', icon: '✂', groups: [{ name: 'Haircuts & Styling', services: [{ name: 'Haircut & style', duration: 60, price: 1800 }, { name: 'Blow-dry', duration: 45, price: 1200 }, { name: 'Hair wash & styling', duration: 45, price: 1000 }] }, { name: 'Hair Colour', services: [{ name: 'Root touch-up', duration: 90, price: 2500 }, { name: 'Global hair colour', duration: 120, price: 4200, length: true }, { name: 'Balayage', duration: 180, price: 6800, length: true }, { name: 'Highlights', duration: 150, price: 5500, length: true }] }, { name: 'Hair Treatments', services: [{ name: 'Hair treatment', duration: 75, price: 2500, length: true }, { name: 'Hair spa', duration: 75, price: 2200, length: true }, { name: 'Keratin treatment', duration: 180, price: 7500, length: true }] }] },
+  { id: 'skin', name: 'Skin', icon: '◐', groups: [{ name: 'Facials & Clean-up', services: [{ name: 'Signature facial', duration: 90, price: 3200 }, { name: 'Clean-up', duration: 60, price: 1600 }, { name: 'De-tan', duration: 45, price: 1200 }] }, { name: 'Skin Treatments', services: [{ name: 'Hydra facial', duration: 75, price: 4500 }, { name: 'Chemical peel', duration: 60, price: 3500 }, { name: 'Skin consultation', duration: 30, price: 800 }] }] },
+  { id: 'makeup', name: 'Makeup', icon: '✧', groups: [{ name: 'Occasion Makeup', services: [{ name: 'Party makeup', duration: 75, price: 3500 }, { name: 'Bridal makeup', duration: 120, price: 8500 }, { name: 'Engagement makeup', duration: 90, price: 5500 }] }, { name: 'Makeup Add-ons', services: [{ name: 'Saree draping', duration: 30, price: 900 }, { name: 'False lashes', duration: 15, price: 500 }, { name: 'Hairstyling for makeup', duration: 45, price: 1800 }] }] },
+  { id: 'nails', name: 'Nails', icon: '◈', groups: [{ name: 'Manicure', services: [{ name: 'Gel manicure', duration: 60, price: 1600 }, { name: 'Classic manicure', duration: 45, price: 900 }] }, { name: 'Pedicure', services: [{ name: 'Gel pedicure', duration: 75, price: 2000 }, { name: 'Classic pedicure', duration: 60, price: 1200 }] }, { name: 'Nail Enhancements', services: [{ name: 'Nail extensions', duration: 120, price: 3000 }, { name: 'Nail art', duration: 30, price: 700 }] }] },
+  { id: 'spa', name: 'Spa', icon: '◌', groups: [{ name: 'Body Spa', services: [{ name: 'Swedish massage', duration: 60, price: 3000 }, { name: 'Deep tissue massage', duration: 75, price: 4200 }, { name: 'Body polish', duration: 60, price: 2800 }] }, { name: 'Wellness', services: [{ name: 'Head massage', duration: 30, price: 900 }, { name: 'Foot reflexology', duration: 45, price: 1800 }] }] },
+  { id: 'others', name: 'Others', icon: '✦', groups: [{ name: 'Grooming & Add-ons', services: [{ name: 'Eyebrow shaping', duration: 15, price: 300 }, { name: 'Threading', duration: 20, price: 400 }, { name: 'Consultation', duration: 20, price: 500 }] }] }
 ];
+SERVICE_CATEGORIES.forEach(category => { category.services = category.groups.flatMap(group => group.services.map(service => ({ ...service, subgroup: group.name }))); });
 
-const serviceCategory = name => SERVICE_CATEGORIES.find(category => category.name === name);
-const servicePriceLabel = service => service.pricingType === 'length' ? `From ${money(service.lengthPrices?.short || service.price)}` : money(service.price);
-const lengthPricing = price => ({ short: Math.round(price * 0.8), medium: price, long: Math.round(price * 1.25) });
+const serviceCategory = name => SERVICE_CATEGORIES.find(category => category.name === name || category.groups.some(group => group.name === name));
+const servicePriceLabel = service => service.pricingType === 'length' ? `From ${money(service.lengthPrices?.shoulder ?? service.lengthPrices?.short ?? service.price)}` : money(service.price);
+const lengthPricing = price => ({ shoulder: Math.round(price * 0.8), belowWaist: price, beyondWaist: Math.round(price * 1.2), long: Math.round(price * 1.4), short: Math.round(price * 0.8), medium: price });
 
 function services() {
   const entries = state.services;
@@ -38,48 +27,85 @@ function serviceCategorySection(category, entries) {
   return `<section class="service-category-section"><div class="service-category-title"><span class="service-icon">${presetCategory?.icon || '✦'}</span><div><h2>${category}</h2><p>${entries.length} service${entries.length === 1 ? '' : 's'}</p></div></div><div class="service-grid">${entries.map(service => `<article class="service-card service-menu-card"><h3>${service.name}</h3><p>${service.duration} minutes${service.pricingType === 'length' ? ' · by hair length' : ''}</p><footer><span>${servicePriceLabel(service)}</span><button class="text-link" data-service="${service.id}">Edit price</button></footer></article>`).join('')}</div></section>`;
 }
 
-function serviceSetupWizard(selectedIds = ['cut-style', 'colour', 'care-spa']) {
-  modal('Set up your services', 'Step 1 of 2 · Choose the areas your salon offers. You can add or remove services later.', `<div class="service-category-picker">${SERVICE_CATEGORIES.map(category => `<label class="service-category-choice"><input type="checkbox" name="service-category" value="${category.id}" ${selectedIds.includes(category.id) ? 'checked' : ''}><span class="service-icon">${category.icon}</span><span><strong>${category.name}</strong><small>${category.services.slice(0, 2).map(service => service.name).join(' · ')}</small></span></label>`).join('')}</div>`, 'Next: choose services');
-  document.getElementById('modal-form').onsubmit = event => {
-    event.preventDefault();
-    const selected = [...new FormData(event.target).getAll('service-category')];
-    if (!selected.length) return alertToast('Choose at least one service category.');
-    serviceSetupServicesStep(selected);
-  };
+function serviceCatalogChoices() {
+  return SERVICE_CATEGORIES.flatMap(category => category.groups.flatMap(group => group.services.map(service => ({ ...service, category, subgroup: group.name }))));
 }
 
-function serviceSetupServicesStep(selectedIds) {
-  const choices = SERVICE_CATEGORIES.filter(category => selectedIds.includes(category.id)).flatMap(category => category.services.map(service => ({ ...service, category })));
-  modal('Choose services', 'Step 2 of 2 · We have pre-selected popular services and sensible starting prices. Untick anything you do not offer.', `<div class="wizard-service-list">${choices.map((choice, index) => wizardServiceRow(choice, index)).join('')}</div>`, 'Add selected services');
+function serviceSetupWizard() {
+  const choices = serviceCatalogChoices();
+  modal('Build your service menu', 'Select the services you offer and set prices as you go. Use the template if your catalog is already in a spreadsheet.', `<div class="catalog-setup-tools"><span>Start with the popular catalog or import your own.</span><button type="button" class="text-link" id="catalog-download-template">Download Excel template</button><button type="button" class="text-link" id="catalog-upload-file">Upload catalog</button></div><input id="catalog-upload-input" type="file" accept=".xlsx,.csv" hidden><div class="catalog-accordion">${SERVICE_CATEGORIES.map((category, categoryIndex) => `<section class="catalog-category"><button type="button" class="catalog-category-toggle" data-catalog-toggle="${categoryIndex}" aria-expanded="${categoryIndex === 0}"><span class="service-icon">${category.icon}</span><span><strong>${category.name}</strong><small>${category.groups.length} subcategories</small></span><b>⌄</b></button><div class="catalog-category-body" id="catalog-category-${categoryIndex}" ${categoryIndex === 0 ? '' : 'hidden'}>${category.groups.map(group => `<section class="catalog-subcategory"><h3>${group.name}</h3>${choices.map((choice, index) => choice.category.id === category.id && choice.subgroup === group.name ? catalogServiceRow(choice, index) : '').join('')}</section>`).join('')}<div class="catalog-custom-slot" id="catalog-custom-${category.id}"></div><button type="button" class="catalog-add-custom" data-catalog-custom="${category.id}">＋ Add custom service in ${category.name}</button></div></section>`).join('')}</div>`, 'Add selected services');
   const form = document.getElementById('modal-form');
-  form.querySelectorAll('[data-wizard-pricing]').forEach(select => select.addEventListener('change', () => {
-    const row = select.closest('[data-wizard-service]');
-    row.querySelector('.wizard-flat-price').hidden = select.value === 'length';
-    row.querySelector('.wizard-length-prices').hidden = select.value !== 'length';
-  }));
+  form.classList.add('catalog-setup-modal');
+  const updateRow = row => {
+    const enabled = row.querySelector('[data-catalog-enabled]').checked;
+    const length = row.querySelector('[data-catalog-length]');
+    const price = row.querySelector('[data-catalog-price]');
+    const lengthGrid = row.querySelector('.catalog-length-grid');
+    row.classList.toggle('is-selected', enabled);
+    length.disabled = !enabled;
+    price.disabled = !enabled || length.checked;
+    lengthGrid.hidden = !enabled || !length.checked;
+    lengthGrid.querySelectorAll('input').forEach(input => { input.disabled = !enabled || !length.checked; });
+  };
+  form.querySelectorAll('[data-catalog-service-row]').forEach(row => { row.querySelector('[data-catalog-enabled]').addEventListener('change', () => updateRow(row)); row.querySelector('[data-catalog-length]').addEventListener('change', () => updateRow(row)); updateRow(row); });
+  form.querySelectorAll('[data-catalog-toggle]').forEach(toggle => toggle.addEventListener('click', () => { const body = document.getElementById(`catalog-category-${toggle.dataset.catalogToggle}`); body.hidden = !body.hidden; toggle.setAttribute('aria-expanded', String(!body.hidden)); }));
+  form.querySelectorAll('[data-catalog-custom]').forEach(button => button.addEventListener('click', () => { const category = SERVICE_CATEGORIES.find(item => item.id === button.dataset.catalogCustom); document.getElementById(`catalog-custom-${category.id}`).insertAdjacentHTML('beforeend', catalogCustomRow(category)); }));
+  form.addEventListener('change', event => { if (!event.target.matches('[data-custom-category]')) return; const row = event.target.closest('[data-catalog-custom-row]'); row.querySelector('[data-custom-new-category]').hidden = event.target.value !== '__new__'; });
+  document.getElementById('catalog-download-template').onclick = downloadServiceTemplate;
+  document.getElementById('catalog-upload-file').onclick = () => document.getElementById('catalog-upload-input').click();
+  document.getElementById('catalog-upload-input').onchange = event => importServiceCatalog(event.target.files?.[0], true);
   form.onsubmit = event => {
-    event.preventDefault();
-    let added = 0;
-    form.querySelectorAll('[data-wizard-service]').forEach((row, index) => {
-      if (!row.querySelector('input[type="checkbox"]').checked) return;
-      const choice = choices[index];
-      if (state.services.some(service => service.category === choice.category.name && service.name.toLowerCase() === choice.name.toLowerCase())) return;
-      const pricingType = row.querySelector('[data-wizard-pricing]').value;
-      const price = Number(row.querySelector('[name="price"]').value);
-      const lengthPrices = pricingType === 'length' ? {
-        short: Number(row.querySelector('[name="short"]').value), medium: Number(row.querySelector('[name="medium"]').value), long: Number(row.querySelector('[name="long"]').value)
-      } : null;
-      state.services.push({ id: nextId('services'), name: choice.name, category: choice.category.name, duration: choice.duration, price: pricingType === 'length' ? lengthPrices.medium : price, pricingType, lengthPrices, icon: choice.category.icon });
-      added += 1;
+    event.preventDefault(); let added = 0;
+    form.querySelectorAll('[data-catalog-service-row]').forEach(row => {
+      if (!row.querySelector('[data-catalog-enabled]').checked) return;
+      const choice = choices[Number(row.dataset.catalogChoice)]; const byLength = row.querySelector('[data-catalog-length]').checked;
+      const lengthPrices = byLength ? { shoulder: Number(row.querySelector('[data-length-shoulder]').value), belowWaist: Number(row.querySelector('[data-length-below-waist]').value), beyondWaist: Number(row.querySelector('[data-length-beyond-waist]').value), long: Number(row.querySelector('[data-length-long]').value) } : null;
+      const price = byLength ? lengthPrices.belowWaist : Number(row.querySelector('[data-catalog-price]').value);
+      if (!price || state.services.some(service => service.category === choice.subgroup && service.name.toLowerCase() === choice.name.toLowerCase())) return;
+      state.services.push({ id: nextId('services'), name: choice.name, category: choice.subgroup, duration: choice.duration, price, pricingType: byLength ? 'length' : 'flat', lengthPrices, icon: choice.category.icon, availableBranches: state.branches.map(branch => branch.id), onlineBookable: true }); added += 1;
     });
-    state.serviceSetupComplete = true;
-    persist(); closeModal(); render(); alertToast(added ? `${added} services added to your menu.` : 'Those services are already on your menu.');
+    form.querySelectorAll('[data-catalog-custom-row]').forEach(row => {
+      const name = row.querySelector('[data-custom-name]').value.trim(); const selectedCategory = row.querySelector('[data-custom-category]').value; const category = selectedCategory === '__new__' ? row.querySelector('[data-custom-new-category]').value.trim() : selectedCategory; const price = Number(row.querySelector('[data-custom-price]').value);
+      if (!name || !category || !price || state.services.some(service => service.category === category && service.name.toLowerCase() === name.toLowerCase())) return;
+      const owner = SERVICE_CATEGORIES.find(item => item.id === row.dataset.catalogCustomOwner); state.services.push({ id: nextId('services'), name, category, duration: Number(row.querySelector('[data-custom-duration]').value) || 60, price, pricingType: 'flat', icon: owner?.icon || '✦', availableBranches: state.branches.map(branch => branch.id), onlineBookable: true }); added += 1;
+    });
+    if (!added) return alertToast('Select a service and add its price, or add a custom service.');
+    state.serviceSetupComplete = true; persist(); closeModal(); render(); alertToast(`${added} services added to your menu.`);
   };
 }
 
-function wizardServiceRow(choice, index) {
+function catalogServiceRow(choice, index) {
   const prices = lengthPricing(choice.price);
-  return `<div class="wizard-service" data-wizard-service><label class="wizard-service-main"><input type="checkbox" checked><span><strong>${choice.name}</strong><small>${choice.category.name} · ${choice.duration} min</small></span></label><div class="wizard-price-controls">${choice.length ? `<select data-wizard-pricing><option value="flat">One price</option><option value="length">By hair length</option></select>` : '<input data-wizard-pricing value="flat" hidden>'}<label class="wizard-flat-price">₹ <input name="price" type="number" min="0" value="${choice.price}"></label><div class="wizard-length-prices" hidden><label>Short<input name="short" type="number" min="0" value="${prices.short}"></label><label>Medium<input name="medium" type="number" min="0" value="${prices.medium}"></label><label>Long<input name="long" type="number" min="0" value="${prices.long}"></label></div></div></div>`;
+  return `<article class="catalog-service-row" data-catalog-service-row data-catalog-choice="${index}"><label class="catalog-service-select"><input type="checkbox" data-catalog-enabled><span><strong>${choice.name}</strong><small>${choice.duration} min</small></span></label><div class="catalog-service-pricing"><label>Price (INR)<input data-catalog-price type="number" min="0" value="${choice.price}"></label>${choice.length ? `<label class="catalog-length-toggle"><input type="checkbox" data-catalog-length> Price by length</label><div class="catalog-length-grid" hidden><label>Shoulder<input data-length-shoulder type="number" min="0" value="${prices.shoulder}"></label><label>Below waist<input data-length-below-waist type="number" min="0" value="${prices.belowWaist}"></label><label>Beyond waist<input data-length-beyond-waist type="number" min="0" value="${prices.beyondWaist}"></label><label>Long<input data-length-long type="number" min="0" value="${prices.long}"></label></div>` : '<input data-catalog-length type="checkbox" hidden>'}</div></article>`;
+}
+
+function catalogCustomRow(category) {
+  const subcategories = category.groups.map(group => `<option>${group.name}</option>`).join('');
+  return `<article class="catalog-custom-row" data-catalog-custom-row data-catalog-custom-owner="${category.id}"><input data-custom-name placeholder="Custom service name"><select data-custom-category>${subcategories}<option value="__new__">Create new category</option></select><input data-custom-new-category hidden placeholder="New category name"><input data-custom-duration type="number" min="15" step="15" value="60" placeholder="Minutes"><input data-custom-price type="number" min="0" placeholder="Price (INR)"></article>`;
+}
+
+function downloadServiceTemplate() {
+  const rows = [{ Category: 'Hair', Subcategory: 'Hair Colour', 'Service Name': 'Global hair colour', 'Duration (minutes)': '120', 'Pricing Type': 'Length', 'Price (INR)': '', 'Shoulder Price': '3360', 'Below Waist Price': '4200', 'Beyond Waist Price': '5040', 'Long Price': '5880' }, { Category: 'Skin', Subcategory: 'Facials & Clean-up', 'Service Name': 'Signature facial', 'Duration (minutes)': '90', 'Pricing Type': 'Flat', 'Price (INR)': '3200', 'Shoulder Price': '', 'Below Waist Price': '', 'Beyond Waist Price': '', 'Long Price': '' }];
+  const link = document.createElement('a'); link.href = URL.createObjectURL(downloadClientWorkbook(rows, 'Services')); link.download = 'salon-genie-service-template.xlsx'; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); alertToast('Service template downloaded.');
+}
+
+async function importServiceCatalog(file, closeSetup = false) {
+  if (!file) return;
+  try {
+    const rows = await clientRowsFromFile(file); let added = 0, updated = 0, skipped = 0;
+    rows.forEach(row => {
+      const read = (...keys) => keys.map(key => row[key]).find(value => value !== undefined && String(value).trim() !== '') || '';
+      const name = String(read('Service Name', 'Name', 'service name')).trim(); const category = String(read('Subcategory', 'Category', 'category')).trim(); const duration = Number(read('Duration (minutes)', 'Duration', 'duration')) || 60; const type = String(read('Pricing Type', 'Pricing', 'pricing type')).trim().toLowerCase(); const byLength = type === 'length' || type === 'by length';
+      const lengthPrices = byLength ? { shoulder: Number(read('Shoulder Price', 'Shoulder')) || 0, belowWaist: Number(read('Below Waist Price', 'Below Waist')) || 0, beyondWaist: Number(read('Beyond Waist Price', 'Beyond Waist')) || 0, long: Number(read('Long Price', 'Long')) || 0 } : null;
+      const price = byLength ? lengthPrices.belowWaist : Number(read('Price (INR)', 'Price', 'price'));
+      if (!name || !category || !price) { skipped += 1; return; }
+      const owner = serviceCategory(category); const record = { name, category, duration, price, pricingType: byLength ? 'length' : 'flat', lengthPrices, icon: owner?.icon || '✦', availableBranches: state.branches.map(branch => branch.id), onlineBookable: true };
+      const existing = state.services.find(item => item.category === category && item.name.toLowerCase() === name.toLowerCase());
+      if (existing) { Object.assign(existing, record); updated += 1; } else { state.services.push({ id: nextId('services'), ...record }); added += 1; }
+    });
+    if (!added && !updated) return alertToast('No services were added. Check the template columns and prices.');
+    state.serviceSetupComplete = true; persist(); if (closeSetup) closeModal(); render(); alertToast(`Service catalog updated: ${added} added, ${updated} updated${skipped ? `, ${skipped} skipped` : ''}.`);
+  } catch { alertToast('We could not read that file. Please use the Salon Genie Excel template or CSV format.'); }
 }
 
 function serviceModal(id = null) {
