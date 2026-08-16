@@ -558,9 +558,51 @@ function marketing() {
       : `<button data-campaign="${campaign.id}">${campaign.status === 'Draft' ? 'Send' : 'View results'} →</button>`;
     return `<tr><td><strong>${campaign.name}${campaign.reference ? ' <span class="marketing-reference">Reference</span>' : ''}</strong></td><td><span class="marketing-channel">${campaign.channel}</span></td><td>${campaign.audience}</td><td><span class="campaign-status"><i class="dot"></i>${campaign.status}</span></td><td><span class="marketing-tracking">${tracking}</span></td><td>${action}</td></tr>`;
   };
-  layout(`${pageHead('CLIENT MARKETING', 'Marketing', 'Plan campaigns, follow performance, and take action from one place.', `<button class="marketing-planning-widget" id="open-marketing-planning"><span>✦</span><span><strong>Insightful marketing planning</strong><small>Plan your next best campaign</small></span><i>→</i></button><button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel marketing-table-panel"><div class="table-head"><div><h2>Campaigns, tracking & actions</h2><p>${savedCampaigns.length ? 'Your saved campaigns plus reference examples for planning.' : 'Reference examples for planning across your main channels.'}</p></div><span class="marketing-count">${campaigns.length} campaigns</span></div><table class="data-table marketing-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th>TRACKING</th><th>ACTION</th></tr></thead><tbody>${campaigns.map(campaignRow).join('')}</tbody></table></article>`);
+  layout(`${pageHead('CLIENT MARKETING', 'Marketing', 'Plan campaigns, follow performance, and take action from one place.', `<button class="marketing-planning-widget" id="open-marketing-planning"><span>✦</span><span><strong>Insightful Marketing Planning</strong><small>Plan your next best campaign</small></span><i>→</i></button><button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel marketing-table-panel"><div class="table-head"><div><h2>Campaigns, tracking & actions</h2><p>${savedCampaigns.length ? 'Your saved campaigns plus reference examples for planning.' : 'Reference examples for planning across your main channels.'}</p></div><span class="marketing-count">${campaigns.length} campaigns</span></div><table class="data-table marketing-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th>TRACKING</th><th>ACTION</th></tr></thead><tbody>${campaigns.map(campaignRow).join('')}</tbody></table></article>`);
   document.querySelectorAll('[data-marketing-reference]').forEach(button => button.addEventListener('click', () => alertToast('Reference campaign shown for planning only.')));
-  document.getElementById('open-marketing-planning')?.addEventListener('click', () => alertToast('Insightful marketing planning will be configured next.'));
+  document.getElementById('open-marketing-planning')?.addEventListener('click', marketingPlanningWizard);
+}
+
+function marketingPlanningWizard() {
+  const answers = {};
+  let step = 1;
+  const steps = [
+    `<label>How is the overall salon performance?<select name="performance" required><option value="">Choose one</option><option>Growing</option><option>Stable</option><option>Needs improvement</option></select></label><label>Are you comfortable with the current performance?<select name="comfort" required><option value="">Choose one</option><option>Comfortable</option><option>Somewhat comfortable</option><option>Not comfortable</option></select></label><label>Approximate monthly surplus (INR)<input name="surplus" type="number" min="0" placeholder="Example: 50000" required></label>`,
+    `<label>What is your primary pain point?<select name="painPoint" required><option value="">Choose one</option><option>Getting new leads</option><option>Converting leads to bookings</option><option>Bringing clients back</option><option>Building local awareness</option><option>Improving ad return</option></select></label><fieldset class="marketing-wizard-checks"><legend>Where do your leads come from?</legend>${['Instagram','Google','Referrals','Walk-ins','WhatsApp','Other'].map(source => `<label><input type="checkbox" name="leadSources" value="${source}"> ${source}</label>`).join('')}</fieldset><label>What is your monthly ad spend?<select name="adSpend" required><option value="">Choose one</option><option>Not spending yet</option><option>Under INR 10,000</option><option>INR 10,000 to 30,000</option><option>Over INR 30,000</option></select></label>`,
+    `<label>What is your priority for the next period?<select name="goal" required><option value="">Choose one</option><option>More new clients</option><option>More premium bookings</option><option>More repeat visits</option><option>Better ad return</option></select></label><label>How are follow-ups managed today?<select name="followUp" required><option value="">Choose one</option><option>Mostly manual</option><option>Occasionally</option><option>Through WhatsApp</option><option>Automatically</option></select></label><label>When would you like to see progress?<select name="timeframe" required><option value="">Choose one</option><option>In the next 30 days</option><option>In the next 90 days</option></select></label>`
+  ];
+  const showStep = () => {
+    modal('Insightful Marketing Planning', 'Answer a few questions to create a focused Salon Growth plan.', `<div class="marketing-wizard-progress"><span>Step ${step} of 3</span><i style="width:${step / 3 * 100}%"></i></div><div class="marketing-wizard-fields">${steps[step - 1]}</div>`, step === 3 ? 'Create my plan' : 'Continue');
+    const form = document.getElementById('modal-form');
+    form.classList.add('marketing-wizard-modal');
+    if (step > 1) {
+      form.querySelector('.modal-actions').insertAdjacentHTML('afterbegin', '<button class="btn secondary" type="button" id="marketing-wizard-back">Back</button>');
+      document.getElementById('marketing-wizard-back').onclick = () => { step -= 1; showStep(); };
+    }
+    form.onsubmit = event => {
+      event.preventDefault();
+      const data = new FormData(form);
+      data.forEach((value, key) => { if (key !== 'leadSources') answers[key] = value; });
+      answers.leadSources = [...form.querySelectorAll('[name="leadSources"]:checked')].map(input => input.value);
+      if (step < 3) { step += 1; showStep(); return; }
+      marketingPlanningReport(answers);
+    };
+  };
+  showStep();
+}
+
+function marketingPlanningReport(answers) {
+  const solutions = [
+    ['Salon Growth Insights', `Use one clear weekly view of performance and surplus, then track the actions that matter ${answers.timeframe.toLowerCase()}.`]
+  ];
+  if (['Getting new leads', 'Building local awareness'].includes(answers.painPoint) || answers.goal === 'More new clients') solutions.push(['Local Discovery & Lead Capture', `Strengthen the channels already bringing attention (${answers.leadSources.join(', ') || 'your key local channels'}) and turn interest into trackable enquiries.`]);
+  if (answers.painPoint === 'Converting leads to bookings') solutions.push(['Lead Response Workflows', 'Use timely WhatsApp follow-ups and clear next steps so warm leads do not go cold before booking.']);
+  if (answers.painPoint === 'Bringing clients back' || answers.goal === 'More repeat visits') solutions.push(['Client Retention Automations', `Trigger relevant follow-ups around service due dates instead of relying on ${answers.followUp.toLowerCase()} outreach.`]);
+  if (answers.painPoint === 'Improving ad return' || answers.goal === 'Better ad return' || answers.adSpend !== 'Not spending yet') solutions.push(['Campaign Attribution', `Connect your ${answers.adSpend.toLowerCase()} to enquiries and bookings so you can keep what performs and adjust what does not.`]);
+  if (answers.goal === 'More premium bookings') solutions.push(['Premium Service Campaigns', 'Build focused campaigns around higher-value services, with a clear audience, offer, and booking call to action.']);
+  modal('Your Salon Growth plan', 'Recommendations based on your marketing assessment.', `<div class="marketing-plan-summary"><span><b>Performance</b>${answers.performance} · ${answers.comfort}</span><span><b>Monthly surplus</b>INR ${Number(answers.surplus).toLocaleString('en-IN')}</span><span><b>Primary focus</b>${answers.painPoint}</span></div><p class="marketing-plan-intro">Salon Growth can help you move from assumptions to a measurable marketing plan. Start with these services:</p><div class="marketing-plan-solutions">${solutions.map(([title, rationale], index) => `<article class="marketing-plan-solution"><span>${index + 1}</span><div><h3>${title}</h3><p>${rationale}</p></div></article>`).join('')}</div>`, 'Close');
+  document.getElementById('modal-form').classList.add('marketing-report-modal');
+  document.getElementById('modal-form').onsubmit = event => { event.preventDefault(); closeModal(); };
 }
 
 render();
