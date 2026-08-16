@@ -65,6 +65,7 @@ if (!['normal', 'insight'].includes(state.preferences.displayMode)) state.prefer
 let view = new URLSearchParams(window.location.search).get('view') || 'overview';
 let selectedAppointment = null;
 let selectedPayment = 'UPI';
+let marketingCampaignPage = 0;
 let calendarMode = new URLSearchParams(window.location.search).get('calendar') || 'today';
 let calendarStaffId = 'all';
 let calendarLayout = 'calendar';
@@ -554,6 +555,11 @@ function marketing() {
   const savedPlans = local('marketingPlans').slice().reverse();
   const references = marketingReferenceCampaigns().slice(0, Math.max(0, 8 - savedCampaigns.length)).map(campaign => ({ ...campaign, reference: true }));
   const campaigns = [...savedCampaigns, ...references];
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(campaigns.length / pageSize));
+  marketingCampaignPage = Math.min(marketingCampaignPage, totalPages - 1);
+  const pageStart = marketingCampaignPage * pageSize;
+  const campaignPage = campaigns.slice(pageStart, pageStart + pageSize);
   const campaignRow = campaign => {
     const tracking = campaign.tracking || (campaign.status === 'Draft' ? 'Audience saved · ready to send' : 'Delivery and responses will appear here');
     const action = campaign.reference
@@ -561,10 +567,22 @@ function marketing() {
       : `<button data-campaign="${campaign.id}">${campaign.status === 'Draft' ? 'Send' : 'View results'} →</button>`;
     return `<tr><td><strong>${campaign.name}${campaign.reference ? ' <span class="marketing-reference">Reference</span>' : ''}</strong></td><td><span class="marketing-channel">${campaign.channel}</span></td><td>${campaign.audience}</td><td><span class="campaign-status"><i class="dot"></i>${campaign.status}</span></td><td><span class="marketing-tracking">${tracking}</span></td><td>${action}</td></tr>`;
   };
-  const planCards = savedPlans.length ? savedPlans.map(plan => `<article class="marketing-saved-plan"><div><span class="marketing-plan-date">${plan.createdAt}</span><h3>${plan.title}</h3><p>${plan.summary}</p></div><div class="marketing-saved-solutions">${plan.solutions.map(solution => `<span>${solution[0]}</span>`).join('')}</div></article>`).join('') : '<div class="marketing-plan-empty"><span>✦</span><div><strong>Your recommendations will appear here</strong><p>Complete Insightful Marketing Planning to build your first Salon Growth plan.</p></div></div>';
-  layout(`${pageHead('CLIENT MARKETING', 'Marketing', 'Plan campaigns, follow performance, and take action from one place.', `<button class="marketing-planning-widget" id="open-marketing-planning"><span>✦</span><span><strong>Insightful Marketing Planning</strong><small>Plan your next best campaign</small></span><i>→</i></button><button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel marketing-table-panel"><div class="table-head"><div><h2>Campaigns, tracking & actions</h2><p>${savedCampaigns.length ? 'Your saved campaigns plus reference examples for planning.' : 'Reference examples for planning across your main channels.'}</p></div><span class="marketing-count">${campaigns.length} campaigns</span></div><table class="data-table marketing-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th>TRACKING</th><th>ACTION</th></tr></thead><tbody>${campaigns.map(campaignRow).join('')}</tbody></table></article><section class="marketing-recommendations"><div class="section-heading"><div><span class="eyebrow">SALON GROWTH PLATFORM</span><h2>Your marketing recommendations</h2><p>Plans generated from your Insightful Marketing Planning assessment.</p></div><span class="marketing-plan-count">${savedPlans.length} saved plan${savedPlans.length === 1 ? '' : 's'}</span></div><div class="marketing-saved-plan-list">${planCards}</div></section>`);
+  const planCards = savedPlans.length ? savedPlans.map(plan => `<article class="marketing-saved-plan"><div class="marketing-saved-plan-copy"><span class="marketing-plan-date">${plan.createdAt}</span><h3>${plan.title}</h3><p>${plan.summary}</p><ul>${marketingPlanActions(plan).map(action => `<li>${action}</li>`).join('')}</ul></div><div class="marketing-saved-solutions">${plan.solutions.map(solution => `<span>${solution[0]}</span>`).join('')}</div></article>`).join('') : '<div class="marketing-plan-empty"><span>✦</span><div><strong>Your recommendations will appear here</strong><p>Complete Insightful Marketing Planning to build your first Salon Growth plan.</p></div></div>';
+  const campaignPagination = campaigns.length > pageSize ? `<div class="marketing-pagination"><span>${pageStart + 1}-${Math.min(pageStart + pageSize, campaigns.length)} of ${campaigns.length}</span><div>${Array.from({ length: totalPages }, (_, index) => `<button class="${index === marketingCampaignPage ? 'active' : ''}" data-marketing-page="${index}">${index * pageSize + 1}-${Math.min((index + 1) * pageSize, campaigns.length)}</button>`).join('')}</div><button class="text-link" data-marketing-page="${Math.max(0, marketingCampaignPage - 1)}" ${marketingCampaignPage === 0 ? 'disabled' : ''}>Previous</button><button class="text-link" data-marketing-page="${Math.min(totalPages - 1, marketingCampaignPage + 1)}" ${marketingCampaignPage === totalPages - 1 ? 'disabled' : ''}>Next</button></div>` : '';
+  layout(`${pageHead('CLIENT MARKETING', 'Marketing', 'Plan campaigns, follow performance, and take action from one place.', `<button class="marketing-planning-widget" id="open-marketing-planning"><span>✦</span><span><strong>Insightful Marketing Planning</strong><small>Plan your next best campaign</small></span><i>→</i></button><button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel marketing-table-panel"><div class="table-head"><div><h2>Campaigns, tracking & actions</h2><p>${savedCampaigns.length ? 'Your saved campaigns plus reference examples for planning.' : 'Reference examples for planning across your main channels.'}</p></div><span class="marketing-count">${campaigns.length} campaigns</span></div><table class="data-table marketing-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th>TRACKING</th><th>ACTION</th></tr></thead><tbody>${campaignPage.map(campaignRow).join('')}</tbody></table>${campaignPagination}</article><section class="marketing-recommendations"><div class="section-heading"><div><span class="eyebrow">SALON GROWTH PLATFORM</span><h2>Your marketing recommendations</h2><p>Plans generated from your Insightful Marketing Planning assessment.</p></div><span class="marketing-plan-count">${savedPlans.length} saved plan${savedPlans.length === 1 ? '' : 's'}</span></div><div class="marketing-saved-plan-list">${planCards}</div></section>`);
   document.querySelectorAll('[data-marketing-reference]').forEach(button => button.addEventListener('click', () => alertToast('Reference campaign shown for planning only.')));
+  document.querySelectorAll('[data-marketing-page]').forEach(button => button.addEventListener('click', () => { marketingCampaignPage = Number(button.dataset.marketingPage); render(); }));
   document.getElementById('open-marketing-planning')?.addEventListener('click', marketingPlanningWizard);
+}
+
+function marketingPlanActions(plan) {
+  return plan.actions || [
+    'Set one clear campaign goal and measure it every week.',
+    'Focus first on the lead channel that is most likely to convert.',
+    'Use a relevant service offer with a direct booking call to action.',
+    'Follow up warm enquiries on WhatsApp within one business day.',
+    'Review bookings and campaign return before increasing spend.'
+  ];
 }
 
 function marketingPlanningWizard() {
@@ -604,7 +622,14 @@ function marketingPlanningReport(answers) {
   if (answers.painPoint === 'Bringing clients back' || answers.goal === 'More repeat visits') solutions.push(['Client Retention Automations', `Trigger relevant follow-ups around service due dates instead of relying on ${answers.followUp.toLowerCase()} outreach.`]);
   if (answers.painPoint === 'Improving ad return' || answers.goal === 'Better ad return' || answers.adSpend !== 'Not spending yet') solutions.push(['Campaign Attribution', `Connect your ${answers.adSpend.toLowerCase()} to enquiries and bookings so you can keep what performs and adjust what does not.`]);
   if (answers.goal === 'More premium bookings') solutions.push(['Premium Service Campaigns', 'Build focused campaigns around higher-value services, with a clear audience, offer, and booking call to action.']);
-  state.marketingPlans.push({ id: Date.now(), branch: state.activeBranch, createdAt: new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()), title: `${answers.goal} plan`, summary: `${answers.painPoint} · ${answers.timeframe}`, solutions });
+  const actions = [
+    `Define a focused ${answers.goal.toLowerCase()} campaign for ${answers.timeframe.toLowerCase()}.`,
+    `Start with ${answers.leadSources.join(' and ') || 'your strongest local channels'} and build one audience for each channel.`,
+    `Create an offer that directly addresses ${answers.painPoint.toLowerCase()} and gives clients a clear reason to book now.`,
+    `Use WhatsApp follow-ups to contact every warm enquiry within one business day, improving on your ${answers.followUp.toLowerCase()} process.`,
+    `Review enquiries, bookings, and the return on ${answers.adSpend.toLowerCase()} each week before changing your campaign.`
+  ];
+  state.marketingPlans.push({ id: Date.now(), branch: state.activeBranch, createdAt: new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date()), title: `${answers.goal} plan`, summary: `${answers.painPoint} · ${answers.timeframe}`, solutions, actions });
   persist();
   modal('Your Salon Growth plan', 'Recommendations based on your marketing assessment.', `<div class="marketing-plan-summary"><span><b>Performance</b>${answers.performance} · ${answers.comfort}</span><span><b>Monthly surplus</b>INR ${Number(answers.surplus).toLocaleString('en-IN')}</span><span><b>Primary focus</b>${answers.painPoint}</span></div><p class="marketing-plan-intro">Salon Growth can help you move from assumptions to a measurable marketing plan. Start with these services:</p><div class="marketing-plan-solutions">${solutions.map(([title, rationale], index) => `<article class="marketing-plan-solution"><span>${index + 1}</span><div><h3>${title}</h3><p>${rationale}</p></div></article>`).join('')}</div>`, 'Close');
   document.getElementById('modal-form').classList.add('marketing-report-modal');
