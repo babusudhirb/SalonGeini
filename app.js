@@ -65,7 +65,7 @@ if (!['normal', 'insight'].includes(state.preferences.displayMode)) state.prefer
 let view = new URLSearchParams(window.location.search).get('view') || 'overview';
 let selectedAppointment = null;
 let selectedPayment = 'UPI';
-let walkInDraft = { name: '', phone: '', date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [] };
+let walkInDraft = { clientId: null, date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [] };
 let marketingCampaignPage = 0;
 let reportView = 'sales';
 let calendarMode = new URLSearchParams(window.location.search).get('calendar') || 'today';
@@ -773,19 +773,13 @@ function refreshWalkInPreview() {
 }
 
 function saveWalkInInvoice() {
-  const name = walkInDraft.name.trim(), phone = walkInDraft.phone.trim();
-  if (!name || !phone) return alertToast('Enter the client name and mobile number first.');
+  const customer = client(walkInDraft.clientId);
+  if (!customer) return alertToast('Search and select a client first.');
   if (!walkInDraft.items.length || walkInDraft.items.some(item => !item.serviceId)) return alertToast('Add at least one service first.');
-  const normalizedPhone = phone.replace(/\D/g, '');
-  let customer = local('clients').find(entry => entry.phone.replace(/\D/g, '') === normalizedPhone);
-  if (!customer) {
-    customer = { id: nextId('clients'), branch: state.activeBranch, name, phone, visits: 0, spent: 0, birthday: '', notes: '' };
-    state.clients.push(customer);
-  }
   const totals = walkInTotals();
-  customer.name = name; customer.phone = phone; customer.visits = (Number(customer.visits) || 0) + 1; customer.spent = (Number(customer.spent) || 0) + totals.total;
+  customer.visits = (Number(customer.visits) || 0) + 1; customer.spent = (Number(customer.spent) || 0) + totals.total;
   state.invoices.push({ id: nextId('invoices'), clientId: customer.id, appointmentId: null, total: totals.total, subtotal: totals.subtotal, tax: totals.tax, payment: walkInDraft.payment, branch: state.activeBranch, date: walkInDraft.date, source: 'walk-in', lines: walkInDraft.items.map(item => ({ ...item })), whatsAppStatus: 'Queued', whatsAppSentAt: new Date().toISOString() });
-  walkInDraft = { name: '', phone: '', date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [freshWalkInItem()] };
+  walkInDraft = { clientId: null, date: new Date().toISOString().slice(0, 10), payment: 'UPI', items: [freshWalkInItem()] };
   persist(); render(); alertToast('Payment collected. Invoice queued for WhatsApp.');
 }
 
@@ -803,7 +797,8 @@ function checkout() {
   const entries = local('appointments').filter(appointment => !appointment.paid && appointment.status !== 'cancelled');
   const current = entries.find(appointment => appointment.id === selectedAppointment) || entries[0];
   selectedAppointment = current?.id || null;
-  const walkInPanel = `<section class="checkout-section walkin-checkout-section"><div class="section-heading"><div><p class="eyebrow">WALK-IN BILLING</p><h2>Create a new bill</h2><p>Find a client or add a new one, then collect payment.</p></div></div><div class="walkin-billing-layout"><article class="panel walkin-bill-form"><form id="walkin-checkout-form"><div class="walkin-client-grid"><label>Find saved client<input id="walkin-client-search" list="walkin-client-options" placeholder="Search name or mobile"></label><label>Client name<input required value="${walkInDraft.name}" data-walkin-field="name" placeholder="Client name"></label><label>Mobile number<input required inputmode="tel" value="${walkInDraft.phone}" data-walkin-field="phone" placeholder="Mobile number"></label><label>Date<input type="date" value="${walkInDraft.date}" data-walkin-field="date"></label></div><datalist id="walkin-client-options">${local('clients').map(entry => `<option value="${entry.name}" label="${entry.phone}"></option><option value="${entry.phone}" label="${entry.name}"></option>`).join('')}</datalist><div class="walkin-line-list">${walkInDraft.items.map(walkInLine).join('')}</div><button class="btn secondary walkin-add-line" type="button" data-add-walkin-line>+ Add service</button></form></article><div class="checkout-preview-stack">${checkoutPreview(walkInTotals(), walkInDraft.payment)}<button class="btn primary full" id="collect-walkin-payment">Collect ${money(walkInTotals().total)}</button></div></div></section>`;
+  const selectedClient = client(walkInDraft.clientId);
+  const walkInPanel = `<section class="checkout-section walkin-checkout-section"><div class="section-heading"><div><p class="eyebrow">WALK-IN BILLING</p><h2>Create a new bill</h2><p>Search an existing client, add services, then collect payment.</p></div></div><div class="walkin-billing-layout"><article class="panel walkin-bill-form"><form id="walkin-checkout-form"><div class="walkin-client-grid"><label>Search client<input id="walkin-client-search" list="walkin-client-options" placeholder="Name or mobile number" value="${selectedClient ? selectedClient.name : ''}"></label><label>Date<input type="date" value="${walkInDraft.date}" data-walkin-field="date"></label></div><datalist id="walkin-client-options">${local('clients').map(entry => `<option value="${entry.name}" label="${entry.phone}"></option><option value="${entry.phone}" label="${entry.name}"></option>`).join('')}</datalist>${selectedClient ? `<div class="walkin-selected-client"><span>Selected client</span><strong>${selectedClient.name}</strong><small>${selectedClient.phone}</small><button type="button" data-clear-walkin-client>Change</button></div>` : '<p class="walkin-client-hint">Select a client from the database to continue.</p>'}<div class="walkin-line-list">${walkInDraft.items.map(walkInLine).join('')}</div><button class="btn secondary walkin-add-line" type="button" data-add-walkin-line>+ Add another service</button></form></article><div class="checkout-preview-stack">${checkoutPreview(walkInTotals(), walkInDraft.payment)}<button class="btn primary full" id="collect-walkin-payment">Collect ${money(walkInTotals().total)}</button></div></div></section>`;
   const appointmentPanel = `<section class="checkout-section checkout-appointment-section"><div class="section-heading"><div><p class="eyebrow">APPOINTMENT CHECKOUTS</p><h2>Ready to checkout</h2><p>These services are pulled directly from today’s appointments.</p></div><span class="marketing-plan-count">${entries.length} ready</span></div>${current ? `<div class="checkout-appointment-layout"><article class="panel"><div class="appointment-checkout-list">${entries.map(appointment => { const treatment = service(appointment.serviceId); return `<button class="appointment-checkout-row ${current.id === appointment.id ? 'selected' : ''}" data-appointment-checkout="${appointment.id}"><span class="appointment-checkout-mark">${treatment.icon || '✦'}</span><span><strong>${client(appointment.clientId).name}</strong><small>${appointment.time} · ${treatment.name} with ${staff(appointment.staffId).name}</small></span><b>${money(treatment.price)}</b></button>`; }).join('')}</div></article><article class="panel checkout-preview"><div class="panel-head"><div><h2>Appointment invoice</h2><p>${currentBranch().name} · #SG-${1000 + current.id}</p></div></div><div class="checkout-summary"><div><span>${service(current.serviceId).name}</span><strong>${money(service(current.serviceId).price)}</strong></div><div><span>GST (${state.organisation.tax}%)</span><strong>${money(service(current.serviceId).price * state.organisation.tax / 100)}</strong></div><div class="checkout-summary-total"><span>Total</span><strong>${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</strong></div></div><label class="eyebrow">PAYMENT METHOD</label><div class="payment-methods">${['UPI', 'Card', 'Cash'].map(method => `<button type="button" class="${selectedPayment === method ? 'active' : ''}" data-appointment-payment="${method}">${method}</button>`).join('')}</div><p class="checkout-whatsapp-note"><span>WhatsApp</span> Invoice will be queued to the client after payment.</p><button class="btn primary full" id="collect-appointment-payment">Collect ${money(service(current.serviceId).price * (1 + state.organisation.tax / 100))}</button></article></div>` : '<article class="panel"><div class="empty">No appointment payments are waiting. Walk-in billing is ready above.</div></article>'}</section>`;
   layout(`${pageHead('POINT OF SALE', 'Checkout', 'Create quick walk-in bills and close appointment payments.')}${walkInPanel}${appointmentPanel}`);
   document.querySelectorAll('[data-walkin-field]').forEach(input => input.addEventListener('input', event => { walkInDraft[event.target.dataset.walkinField] = event.target.value; }));
@@ -815,8 +810,9 @@ function checkout() {
   }));
   document.getElementById('walkin-client-search')?.addEventListener('change', event => {
     const match = local('clients').find(entry => entry.name === event.target.value || entry.phone === event.target.value);
-    if (match) { walkInDraft.name = match.name; walkInDraft.phone = match.phone; render(); }
+    if (match) { walkInDraft.clientId = match.id; render(); }
   });
+  document.querySelector('[data-clear-walkin-client]')?.addEventListener('click', () => { walkInDraft.clientId = null; render(); });
   document.querySelector('[data-add-walkin-line]')?.addEventListener('click', () => { walkInDraft.items.push(freshWalkInItem()); render(); });
   document.querySelectorAll('[data-remove-walkin-line]').forEach(button => button.addEventListener('click', () => { walkInDraft.items.splice(Number(button.dataset.removeWalkinLine), 1); render(); }));
   document.querySelectorAll('[data-walkin-payment]').forEach(button => button.addEventListener('click', () => { walkInDraft.payment = button.dataset.walkinPayment; render(); }));
