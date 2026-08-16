@@ -137,25 +137,6 @@ function applyDisplayDensity() {
     clientTable.classList.add('clients-density-table');
     if (app.querySelector('.client-follow-up-button')?.classList.contains('primary')) clientTable.classList.add('is-follow-up');
   }
-  if (state.preferences.displayMode !== 'insight') return;
-  const appointments = local('appointments');
-  const invoices = local('invoices');
-  const inventory = local('inventory');
-  const followUps = typeof followUpClients === 'function' ? followUpClients().length : 0;
-  const facts = {
-    overview: [['Confirmed today', `${appointments.filter(item => item.status === 'confirmed').length} appointments`], ['Low stock', `${inventory.filter(item => item.stock <= item.reorder).length} products`], ['Follow-ups due', `${followUps} clients`]],
-    calendar: [['Visible appointments', `${filteredCalendarAppointments().length} in this view`], ['Sales estimate', money(bookedSalesEstimate(filteredCalendarAppointments()))], ['Team availability', `${local('staff').length} team members`]],
-    clients: [['Client base', `${local('clients').length} clients`], ['Follow-ups due', `${followUps} clients`], ['Average client value', money(Math.round(local('clients').reduce((total, item) => total + Number(item.spent || 0), 0) / Math.max(1, local('clients').length)))]],
-    checkout: [['Pending checkouts', `${appointments.filter(item => !item.paid && item.status !== 'cancelled').length} appointments`], ['Awaiting collection', money(appointments.filter(item => !item.paid && item.status !== 'cancelled').reduce((total, item) => total + Number(service(item.serviceId)?.price || 0), 0))], ['GST rate', `${state.organisation.tax}%`]],
-    services: [['Active services', `${state.services.length} services`], ['Combos', `${state.combos?.length || 0} configured`], ['Online booking', state.onlineBookingEnabled ? 'Live' : 'Not live']],
-    team: [['Active team', `${local('staff').length} members`], ['Sales today', money(local('staff').reduce((total, item) => total + Number(item.sales || 0), 0))], ['Mobile access', `${local('staff').filter(item => item.mobileAccess).length} enabled`]],
-    inventory: [['Low stock', `${inventory.filter(item => item.stock <= item.reorder).length} products`], ['Open orders', `${state.purchaseOrders.filter(item => item.branch === state.activeBranch && item.status !== 'Received').length} orders`], ['Stock on hand', `${inventory.reduce((total, item) => total + Number(item.stock || 0), 0)} units`]],
-    reports: [['Collected invoices', `${invoices.length} this period`], ['Revenue recorded', money(invoices.reduce((total, item) => total + Number(item.total || 0), 0))], ['Client visits', `${appointments.filter(item => item.status !== 'cancelled').length} recorded`]],
-    marketing: [['Campaigns', `${local('campaigns').length} created`], ['Ready to send', `${local('campaigns').filter(item => item.status === 'Draft').length} drafts`], ['Primary channel', 'WhatsApp']]
-  }[view];
-  const pageHeadElement = app.querySelector('.page-head');
-  if (!facts || !pageHeadElement) return;
-  pageHeadElement.insertAdjacentHTML('afterend', `<section class="insight-mode-strip" aria-label="Insight summary">${facts.map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`).join('')}</section>`);
 }
 
 function dashboard() {

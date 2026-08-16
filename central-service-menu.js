@@ -25,6 +25,7 @@ const serviceTabs = [{ id: 'services', label: 'Services' }, { id: 'combos', labe
 
 function services() {
   prepareCentralServiceMenu();
+  if (state.preferences?.displayMode === 'normal' && serviceMenuSection === 'online') serviceMenuSection = 'services';
   layout(`${pageHead('CENTRAL SERVICE MENU', 'Services', 'One menu for every branch, the front desk, and your future booking website.', serviceMenuActions())}<section class="service-section-overview" aria-label="Service menu sections">${serviceTabs.map(serviceSectionCard).join('')}</section><section class="central-menu-note"><span>✦</span><p><strong>Managed centrally</strong> · Changes to services, combos, and offers stay consistent across your salon group.</p></section><div id="central-service-content">${centralMenuContent()}</div>`);
   document.querySelectorAll('[data-service-menu-tab]').forEach(button => button.addEventListener('click', () => { serviceMenuSection = button.dataset.serviceMenuTab; render(); }));
   document.getElementById('add-central-service')?.addEventListener('click', () => serviceModal());
