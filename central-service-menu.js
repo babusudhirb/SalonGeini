@@ -1,4 +1,6 @@
 let serviceMenuSection = 'services';
+let comboLayout = 'grid';
+let discountLayout = 'list';
 
 function prepareCentralServiceMenu() {
   let changed = false;
@@ -34,6 +36,7 @@ function services() {
   document.getElementById('manage-online-booking-card')?.addEventListener('click', () => { serviceMenuSection = 'online'; render(); });
   document.querySelectorAll('[data-combo]').forEach(button => button.addEventListener('click', () => comboModal(Number(button.dataset.combo))));
   document.querySelectorAll('[data-discount]').forEach(button => button.addEventListener('click', () => discountModal(Number(button.dataset.discount))));
+  document.querySelectorAll('[data-service-layout]').forEach(button => button.addEventListener('click', () => { const [section, layout] = button.dataset.serviceLayout.split(':'); if (section === 'combos') comboLayout = layout; if (section === 'discounts') discountLayout = layout; render(); }));
   document.getElementById('online-booking-toggle')?.addEventListener('change', event => { state.onlineBookingEnabled = event.target.checked; persist(); render(); alertToast(state.onlineBookingEnabled ? 'Online booking is enabled.' : 'Online booking is paused.'); });
   document.querySelectorAll('[data-online-service]').forEach(input => input.addEventListener('change', event => { service(Number(event.target.dataset.onlineService)).onlineBookable = event.target.checked; persist(); }));
   document.querySelectorAll('[data-online-combo]').forEach(input => input.addEventListener('change', event => { state.combos.find(combo => combo.id === Number(event.target.dataset.onlineCombo)).onlineBookable = event.target.checked; persist(); }));
@@ -52,6 +55,10 @@ function serviceSectionCard(tab) {
 
 function serviceMenuActions() { return ''; }
 
+function serviceLayoutSwitch(section, activeLayout) {
+  return `<div class="layout-switch service-layout-switch" role="group" aria-label="${section} layout"><button class="${activeLayout === 'grid' ? 'active' : ''}" data-service-layout="${section}:grid">Grid view</button><button class="${activeLayout === 'list' ? 'active' : ''}" data-service-layout="${section}:list">List view</button></div>`;
+}
+
 function centralMenuContent() {
   if (serviceMenuSection === 'combos') return combosContent();
   if (serviceMenuSection === 'discounts') return discountsContent();
@@ -69,7 +76,8 @@ function serviceCard(item) {
 }
 
 function combosContent() {
-  return `<section class="central-intro"><div><strong>Packages guests can book in one visit</strong><p>Create a combo from individual services. We total the time and show the customer their saving.</p></div><span class="combo-total-badge"><b>${state.combos.length}</b> active combos</span></section><div class="combo-grid">${state.combos.map(comboCard).join('') || '<div class="empty">Create a combo such as “Hair Refresh” or “Weekend Glow”.</div>'}</div>`;
+  const combos = state.combos.map(comboLayout === 'grid' ? comboCard : comboListRow).join('') || '<div class="empty">Create a combo such as “Hair Refresh” or “Weekend Glow”.</div>';
+  return `<section class="central-intro"><div><strong>Packages guests can book in one visit</strong><p>Create a combo from individual services. We total the time and show the customer their saving.</p></div><div class="central-intro-actions"><span class="combo-total-badge"><b>${state.combos.length}</b> active combos</span>${serviceLayoutSwitch('combos', comboLayout)}</div></section><div class="${comboLayout === 'grid' ? 'combo-grid' : 'combo-list'}">${combos}</div>`;
 }
 
 function comboCard(combo) {
@@ -78,13 +86,28 @@ function comboCard(combo) {
   return `<article class="combo-card"><div class="combo-card-top"><span class="combo-mark">✦</span><button class="text-link" data-combo="${combo.id}">Edit</button></div><h2>${combo.name}</h2><p>${included.map(item => item.name).join(' + ')}</p><div class="combo-pricing"><strong>${money(combo.price)}</strong><span>Save ${money(saving)} · ${percentage}% off</span></div><footer><small>${combo.duration} min · ${centralBranchNames(combo.availableBranches)}</small><b>${combo.onlineBookable ? 'Online bookable' : 'In-salon only'}</b></footer></article>`;
 }
 
+function comboListRow(combo) {
+  const included = combo.serviceIds.map(id => service(id)).filter(Boolean); const normalPrice = included.reduce((total, item) => total + item.price, 0); const saving = Math.max(0, normalPrice - combo.price);
+  return `<article class="combo-list-row"><span class="combo-mark">✦</span><div><strong>${combo.name}</strong><p>${included.map(item => item.name).join(' + ')}</p><small>${combo.duration} min · ${centralBranchNames(combo.availableBranches)} · ${combo.onlineBookable ? 'Online bookable' : 'In-salon only'}</small></div><span class="combo-list-price"><strong>${money(combo.price)}</strong><small>Save ${money(saving)}</small></span><button class="text-link" data-combo="${combo.id}">Edit</button></article>`;
+}
+
 function discountsContent() {
-  return `<section class="central-intro"><div><strong>Planned offers with guardrails</strong><p>Control where each offer applies, when it runs, and whether it can combine with another offer.</p></div><span class="discount-total-badge"><b>${state.discounts.filter(item => item.active).length}</b> active offers</span></section><div class="discount-list">${state.discounts.map(discountRow).join('') || '<div class="empty">Create your first offer. Expiry dates and no-stacking are recommended defaults.</div>'}</div>`;
+  const discounts = state.discounts.map(discountLayout === 'grid' ? discountCard : discountRow).join('') || '<div class="empty">Create your first offer. Expiry dates and no-stacking are recommended defaults.</div>';
+  return `<section class="central-intro"><div><strong>Planned offers with guardrails</strong><p>Control where each offer applies, when it runs, and whether it can combine with another offer.</p></div><div class="central-intro-actions"><span class="discount-total-badge"><b>${state.discounts.filter(item => item.active).length}</b> active offers</span>${serviceLayoutSwitch('discounts', discountLayout)}</div></section><div class="${discountLayout === 'grid' ? 'discount-grid' : 'discount-list'}">${discounts}</div>`;
+}
+
+function discountTarget(item) {
+  return item.scope === 'all' ? 'All salon services' : item.scope === 'category' ? item.targets.join(', ') : item.scope === 'combo' ? item.targets.map(id => state.combos.find(combo => combo.id === Number(id))?.name).filter(Boolean).join(', ') : item.targets.map(id => service(id)?.name).filter(Boolean).join(', ');
 }
 
 function discountRow(item) {
-  const target = item.scope === 'all' ? 'All salon services' : item.scope === 'category' ? item.targets.join(', ') : item.scope === 'combo' ? item.targets.map(id => state.combos.find(combo => combo.id === Number(id))?.name).filter(Boolean).join(', ') : item.targets.map(id => service(id)?.name).filter(Boolean).join(', ');
+  const target = discountTarget(item);
   return `<article class="discount-row"><span class="discount-mark">%</span><div><strong>${item.name}</strong><p>${item.type === 'percent' ? `${item.value}% off` : `${money(item.value)} off`} · ${target || 'Selected items'} · ${item.channels === 'both' ? 'Online and in-salon' : item.channels}</p><small>${item.startDate || 'Starts now'} – ${item.endDate || 'No expiry'} · ${item.stackable ? 'Can stack' : 'Does not stack'}</small></div><span class="discount-status ${item.active ? 'on' : ''}">${item.active ? 'Active' : 'Paused'}</span><button class="text-link" data-discount="${item.id}">Edit</button></article>`;
+}
+
+function discountCard(item) {
+  const target = discountTarget(item);
+  return `<article class="discount-card"><div class="discount-card-top"><span class="discount-mark">%</span><button class="text-link" data-discount="${item.id}">Edit</button></div><h2>${item.name}</h2><p>${item.type === 'percent' ? `${item.value}% off` : `${money(item.value)} off`} · ${target || 'Selected items'}</p><div><span class="discount-status ${item.active ? 'on' : ''}">${item.active ? 'Active' : 'Paused'}</span><small>${item.startDate || 'Starts now'} – ${item.endDate || 'No expiry'}</small></div><footer><span>${item.channels === 'both' ? 'Online and in-salon' : item.channels}</span><b>${item.stackable ? 'Can stack' : 'Does not stack'}</b></footer></article>`;
 }
 
 function onlineBookingContent() {

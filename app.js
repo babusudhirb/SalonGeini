@@ -54,8 +54,12 @@ const seed = {
 };
 
 let state = JSON.parse(localStorage.getItem('salon-genie-data') || 'null') || seed;
+if (typeof state.organisation.multiBranch !== 'boolean') state.organisation.multiBranch = state.branches.length > 1;
+if (!state.expenses || Array.isArray(state.expenses) || typeof state.expenses !== 'object') state.expenses = {};
 if (!Array.isArray(state.purchaseOrders)) state.purchaseOrders = seed.purchaseOrders.map(order => ({ ...order, lines: order.lines.map(line => ({ ...line })) }));
 if (!Array.isArray(state.inventoryHistory)) state.inventoryHistory = seed.inventoryHistory.map(record => ({ ...record, weeks: [...record.weeks] }));
+if (!state.preferences || typeof state.preferences !== 'object') state.preferences = {};
+if (!['normal', 'insight'].includes(state.preferences.displayMode)) state.preferences.displayMode = 'normal';
 let view = new URLSearchParams(window.location.search).get('view') || 'overview';
 let selectedAppointment = null;
 let selectedPayment = 'UPI';
@@ -96,8 +100,61 @@ function layout(content) {
   if (growthPlatformCopy) growthPlatformCopy.innerHTML = '<strong>Grow your revenue</strong><small>with SalonGrowth Platform</small>';
   const growthPlatformLink = app.querySelector('.growth-platform-card');
   if (growthPlatformLink) { growthPlatformLink.tabIndex = 0; growthPlatformLink.setAttribute('role', 'link'); growthPlatformLink.onclick = () => { window.location.href = 'growth-platform.html'; }; growthPlatformLink.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') growthPlatformLink.click(); }; }
+  const salonSummary = app.querySelector('.branch-switch span:nth-child(2)');
+  if (salonSummary) salonSummary.innerHTML = `<strong>${state.organisation.name}</strong><small>${b.name} · ${b.city}</small>`;
+  if (!state.organisation.multiBranch) { app.querySelector('#branch-switch')?.remove(); app.querySelector('#branch-menu')?.remove(); }
+  app.querySelector('.profile')?.remove();
+  if (growthPlatformLink) {
+    growthPlatformLink.insertAdjacentHTML('afterend', '<section class="growth-platform-card marketplace-card" role="button" tabindex="0"><span class="growth-platform-icon">◇</span><span><strong>Expand Salon Genie</strong><small>Visit Salon Genie Marketplace</small></span></section>');
+    const marketplaceCard = app.querySelector('.marketplace-card');
+    const openMarketplace = () => alertToast('Salon Genie Marketplace is coming soon.');
+    marketplaceCard.onclick = openMarketplace;
+    marketplaceCard.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') openMarketplace(); };
+  }
+  app.querySelector('.shell').dataset.currentView = view;
+  app.querySelector('.shell').dataset.displayMode = state.preferences.displayMode;
+  applyDisplayDensity();
+  if (view === 'settings') {
+    app.querySelector('.page-head .actions')?.insertAdjacentHTML('beforeend', displayModeControl());
+    app.querySelectorAll('button[data-display-mode]').forEach(button => button.addEventListener('click', () => {
+      state.preferences.displayMode = button.dataset.displayMode;
+      persist();
+      render();
+      alertToast(`${state.preferences.displayMode === 'insight' ? 'Insight' : 'Normal'} mode enabled.`);
+    }));
+  }
 }
 function pageHead(label, title, description, actions = '') { return `<div class="page-head"><div><p class="eyebrow">${label}</p><h1>${title}</h1>${description ? `<p>${description}</p>` : ''}</div><div class="actions">${actions}</div></div>`; }
+
+function displayModeControl() {
+  const mode = state.preferences.displayMode;
+  return `<div class="display-mode-control" role="group" aria-label="Screen detail level"><span>Screen detail</span><button class="${mode === 'normal' ? 'active' : ''}" type="button" data-display-mode="normal">Normal</button><button class="${mode === 'insight' ? 'active' : ''}" type="button" data-display-mode="insight">Insight</button></div>`;
+}
+
+function applyDisplayDensity() {
+  const clientTable = app.querySelector('.data-table');
+  if (view === 'clients' && clientTable) clientTable.classList.add('clients-density-table', app.querySelector('.client-follow-up-button')?.classList.contains('primary') ? 'is-follow-up' : '');
+  if (state.preferences.displayMode !== 'insight') return;
+  const appointments = local('appointments');
+  const invoices = local('invoices');
+  const inventory = local('inventory');
+  const followUps = typeof followUpClients === 'function' ? followUpClients().length : 0;
+  const facts = {
+    overview: [['Confirmed today', `${appointments.filter(item => item.status === 'confirmed').length} appointments`], ['Low stock', `${inventory.filter(item => item.stock <= item.reorder).length} products`], ['Follow-ups due', `${followUps} clients`]],
+    calendar: [['Visible appointments', `${filteredCalendarAppointments().length} in this view`], ['Sales estimate', money(bookedSalesEstimate(filteredCalendarAppointments()))], ['Team availability', `${local('staff').length} team members`]],
+    clients: [['Client base', `${local('clients').length} clients`], ['Follow-ups due', `${followUps} clients`], ['Average client value', money(Math.round(local('clients').reduce((total, item) => total + Number(item.spent || 0), 0) / Math.max(1, local('clients').length)))]],
+    checkout: [['Pending checkouts', `${appointments.filter(item => !item.paid && item.status !== 'cancelled').length} appointments`], ['Awaiting collection', money(appointments.filter(item => !item.paid && item.status !== 'cancelled').reduce((total, item) => total + Number(service(item.serviceId)?.price || 0), 0))], ['GST rate', `${state.organisation.tax}%`]],
+    services: [['Active services', `${state.services.length} services`], ['Combos', `${state.combos?.length || 0} configured`], ['Online booking', state.onlineBookingEnabled ? 'Live' : 'Not live']],
+    team: [['Active team', `${local('staff').length} members`], ['Sales today', money(local('staff').reduce((total, item) => total + Number(item.sales || 0), 0))], ['Mobile access', `${local('staff').filter(item => item.mobileAccess).length} enabled`]],
+    inventory: [['Low stock', `${inventory.filter(item => item.stock <= item.reorder).length} products`], ['Open orders', `${state.purchaseOrders.filter(item => item.branch === state.activeBranch && item.status !== 'Received').length} orders`], ['Stock on hand', `${inventory.reduce((total, item) => total + Number(item.stock || 0), 0)} units`]],
+    reports: [['Collected invoices', `${invoices.length} this period`], ['Revenue recorded', money(invoices.reduce((total, item) => total + Number(item.total || 0), 0))], ['Client visits', `${appointments.filter(item => item.status !== 'cancelled').length} recorded`]],
+    marketing: [['Campaigns', `${local('campaigns').length} created`], ['Ready to send', `${local('campaigns').filter(item => item.status === 'Draft').length} drafts`], ['Primary channel', 'WhatsApp']]
+  }[view];
+  const pageHeadElement = app.querySelector('.page-head');
+  if (!facts || !pageHeadElement) return;
+  pageHeadElement.insertAdjacentHTML('afterend', `<section class="insight-mode-strip" aria-label="Insight summary">${facts.map(([label, value]) => `<article><span>${label}</span><strong>${value}</strong></article>`).join('')}</section>`);
+}
+
 function dashboard() {
   const appts = local('appointments'); const inventory = local('inventory'); const sales = local('invoices').reduce((sum, invoice) => sum + invoice.total, 26336); const upcoming = appts.filter(x => x.status === 'confirmed');
   layout(`${pageHead(`${currentBranch().name.toUpperCase()} BRANCH`, 'Here’s your day at a glance.', 'Keep the front desk moving, without losing the detail.', `<button class="btn secondary" data-action="walkin">＋ Walk-in</button><button class="btn primary" data-action="booking">＋ New booking</button>`)}<div class="stat-grid"><article class="stat"><span class="stat-icon">₹</span><div><p>Today’s sales</p><strong>${money(sales)}</strong><small class="good">↗ 18.2% <span>vs last Monday</span></small></div></article><article class="stat"><span class="stat-icon">◷</span><div><p>Appointments</p><strong>${appts.length} / 24</strong><small>${24-appts.length} slots still available</small></div></article><article class="stat"><span class="stat-icon">◉</span><div><p>New clients</p><strong>${local('clients').filter(c => c.visits <= 1).length}</strong><small class="good">↗ 2 more <span>than usual</span></small></div></article><article class="stat"><span class="stat-icon">★</span><div><p>Average rating</p><strong>4.9 / 5</strong><small>Based on 42 recent reviews</small></div></article></div><div class="grid"><article class="panel"><div class="panel-head"><div><h2>Today’s schedule</h2><p>Monday, 10 August</p></div><button class="text-link" data-view="calendar">View calendar →</button></div><div class="schedule-toolbar"><div class="date-control"><button>‹</button><strong>Today</strong><button>›</button></div><small>All available team members</small></div>${scheduleHtml(appts)}<button class="add-row" data-action="booking">＋ Add appointment</button></article><div class="side-stack"><article class="panel"><div class="panel-head"><div><h2>Revenue</h2><p>4–10 August</p></div><button class="text-link" data-view="reports">View report →</button></div><div class="revenue-total"><strong>${money(184320)}</strong><span class="tag">↗ 12.4%</span></div><div class="chart">${[45,68,52,83,64,94,38].map((n,i)=>`<i class="${i===5?'active':''}" style="height:${n}%" data-label="${['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i]}"></i>`).join('')}</div></article><article class="panel"><div class="panel-head"><div><h2>Needs your attention</h2><p>Keep things running smoothly</p></div></div><div class="notice-list"><div class="notice"><span class="notice-icon">▤</span><span><strong>${inventory.filter(x=>x.stock<=x.reorder).length} products low in stock</strong><small>Reorder before Friday</small></span><button data-view="inventory">›</button></div><div class="notice"><span class="notice-icon">₹</span><span><strong>${upcoming.length} payments pending</strong><small>${money(upcoming.reduce((s,a)=>s+service(a.serviceId).price,0))} awaiting collection</small></span><button data-view="checkout">›</button></div></div></article></div></div><div class="lower-grid"><article class="panel"><div class="panel-head"><div><h2>Clients to welcome</h2><p>Arriving in the next two hours</p></div><button class="text-link" data-view="clients">View all →</button></div><div class="list">${upcoming.slice(0,3).map(a => personRow(a)).join('') || '<div class="empty">No upcoming appointments.</div>'}</div></article><article class="panel"><div class="panel-head"><div><h2>Team pulse</h2><p>Today’s performance</p></div><button class="text-link" data-view="team">Team report →</button></div>${teamPulse()}</article></div>`);
@@ -186,7 +243,7 @@ function reports() { const invoices=local('invoices'); const revenue=invoices.re
 function marketing() { const entries=local('campaigns'); layout(`${pageHead('CLIENT MARKETING','Marketing','Bring clients back with relevant, thoughtful messages.', `<button class="btn primary" data-action="campaign">＋ New campaign</button>`)}<article class="panel table-panel"><div class="table-head"><div><h2>Campaigns</h2><p>Branch-specific marketing activity</p></div></div><table class="data-table"><thead><tr><th>CAMPAIGN</th><th>CHANNEL</th><th>AUDIENCE</th><th>STATUS</th><th></th></tr></thead><tbody>${entries.map(c=>`<tr><td><strong>${c.name}</strong></td><td>${c.channel}</td><td>${c.audience}</td><td><span class="campaign-status"><i class="dot"></i>${c.status}</span></td><td><button data-campaign="${c.id}">${c.status==='Draft'?'Send':'View'} →</button></td></tr>`).join('') || '<tr><td colspan="5"><div class="empty">No campaigns for this branch.</div></td></tr>'}</tbody></table></article>`); }
 function settings() { const b=currentBranch(); layout(`${pageHead('GROUP SETTINGS','Settings','Control your salon group, branches, taxes, and team access.') }<div class="settings-grid"><article class="setting-card"><h3>Salon group</h3><p>${state.organisation.name} is the organisation that owns and manages every branch.</p><button class="btn secondary" data-action="organisation">Edit group details</button></article><article class="setting-card"><h3>Branches</h3><p>${state.branches.length} active branches. Each branch has its own appointments, team, stock, and reports.</p><button class="btn secondary" data-action="branch">Manage branches</button></article><article class="setting-card"><h3>Tax & invoicing</h3><p>GST is set at ${state.organisation.tax}%. This is automatically applied during checkout.</p><button class="btn secondary" data-action="tax">Edit tax settings</button></article><article class="setting-card"><h3>Current branch</h3><p>${b.name}, ${b.city} is your active workspace.</p><button class="btn secondary" id="branch-switch-settings">Switch branch</button></article></div>`); }
 function render() { ({overview:dashboard,calendar,clients,checkout,services,team,inventory,reports,marketing,settings}[view]||dashboard)(); bind(); }
-function bind() { document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>{view=el.dataset.view; render();})); document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>handleAction(el.dataset.action))); document.querySelectorAll('[data-branch]').forEach(el=>el.addEventListener('click',()=>{state.activeBranch=el.dataset.branch; selectedAppointment=null; persist(); render(); alertToast(`Switched to ${currentBranch().name}`)})); document.querySelectorAll('[data-appointment]').forEach(el=>el.addEventListener('click',()=>appointmentModal(Number(el.dataset.appointment)))); document.querySelectorAll('[data-checkout]').forEach(el=>el.addEventListener('click',()=>{selectedAppointment=Number(el.dataset.checkout);render()})); document.querySelectorAll('[data-payment]').forEach(el=>el.addEventListener('click',()=>{selectedPayment=el.dataset.payment;render()})); document.querySelectorAll('[data-restock]').forEach(el=>el.addEventListener('click',()=>restock(Number(el.dataset.restock)))); document.querySelectorAll('[data-client]').forEach(el=>el.addEventListener('click',()=>clientModal(Number(el.dataset.client)))); document.querySelectorAll('[data-service]').forEach(el=>el.addEventListener('click',()=>serviceModal(Number(el.dataset.service)))); document.querySelectorAll('[data-staff]').forEach(el=>el.addEventListener('click',()=>staffModal(Number(el.dataset.staff)))); document.querySelectorAll('[data-team-profile]').forEach(el=>el.addEventListener('click',()=>teamProfileModal(Number(el.dataset.teamProfile)))); document.querySelectorAll('[data-campaign]').forEach(el=>el.addEventListener('click',()=>campaignAction(Number(el.dataset.campaign)))); document.getElementById('branch-switch')?.addEventListener('click',()=>{const m=document.getElementById('branch-menu');m.hidden=!m.hidden}); document.getElementById('branch-switch-settings')?.addEventListener('click',()=>document.getElementById('branch-switch').click()); document.getElementById('mobile-menu')?.addEventListener('click',()=>document.querySelector('.sidebar').classList.toggle('open')); document.getElementById('client-search')?.addEventListener('input',e=>{document.getElementById('client-table').innerHTML=clientsRows(local('clients').filter(c=>`${c.name} ${c.phone}`.toLowerCase().includes(e.target.value.toLowerCase())))}); }
+function bind() { document.querySelectorAll('[data-view]').forEach(el=>el.addEventListener('click',()=>{view=el.dataset.view; render();})); document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',()=>handleAction(el.dataset.action))); document.querySelectorAll('[data-branch]').forEach(el=>el.addEventListener('click',()=>{state.activeBranch=el.dataset.branch; selectedAppointment=null; persist(); render(); alertToast(`Switched to ${currentBranch().name}`)})); document.querySelectorAll('[data-appointment]').forEach(el=>el.addEventListener('click',()=>appointmentModal(Number(el.dataset.appointment)))); document.querySelectorAll('[data-checkout]').forEach(el=>el.addEventListener('click',()=>{selectedAppointment=Number(el.dataset.checkout);render()})); document.querySelectorAll('[data-payment]').forEach(el=>el.addEventListener('click',()=>{selectedPayment=el.dataset.payment;render()})); document.querySelectorAll('[data-restock]').forEach(el=>el.addEventListener('click',()=>restock(Number(el.dataset.restock)))); document.querySelectorAll('[data-client]').forEach(el=>el.addEventListener('click',()=>clientInsights(Number(el.dataset.client)))); document.querySelectorAll('[data-service]').forEach(el=>el.addEventListener('click',()=>serviceModal(Number(el.dataset.service)))); document.querySelectorAll('[data-staff]').forEach(el=>el.addEventListener('click',()=>staffModal(Number(el.dataset.staff)))); document.querySelectorAll('[data-team-profile]').forEach(el=>el.addEventListener('click',()=>teamProfileModal(Number(el.dataset.teamProfile)))); document.querySelectorAll('[data-campaign]').forEach(el=>el.addEventListener('click',()=>campaignAction(Number(el.dataset.campaign)))); document.getElementById('branch-switch')?.addEventListener('click',()=>{const m=document.getElementById('branch-menu');m.hidden=!m.hidden}); document.getElementById('branch-switch-settings')?.addEventListener('click',()=>document.getElementById('branch-switch').click()); document.getElementById('mobile-menu')?.addEventListener('click',()=>document.querySelector('.sidebar').classList.toggle('open')); document.getElementById('client-search')?.addEventListener('input',e=>{document.getElementById('client-table').innerHTML=clientsRows(local('clients').filter(c=>`${c.name} ${c.phone}`.toLowerCase().includes(e.target.value.toLowerCase())))}); }
 function handleAction(action) { if(action==='booking'||action==='walkin') bookingModal(action==='walkin'); if(action==='client') clientModal(); if(action==='service') serviceModal(); if(action==='staff') staffModal(); if(action==='inventory') inventoryModal(); if(action==='purchase-order') purchaseOrderModal(); if(action==='campaign') campaignModal(); if(action==='pay') takePayment(); if(action==='restock-all'){local('inventory').filter(x=>x.stock<=x.reorder).forEach(x=>x.stock=x.reorder+5);persist();render();alertToast('Low stock items restocked.')} if(action==='branch') branchModal(); if(action==='organisation') organisationModal(); if(action==='tax') taxModal(); if(action==='export') alertToast('Your branch report is ready to download.'); }
 function modal(title, text, form, submit='Save') { modalRoot.innerHTML=`<div class="modal-backdrop"><form class="modal" id="modal-form" role="dialog" aria-modal="true" aria-label="${title}"><button class="close" type="button" id="modal-close" aria-label="Close">×</button><h2>${title}</h2><p>${text}</p>${form}<div class="modal-actions"><button class="btn secondary" type="button" id="modal-cancel">Cancel</button><button class="btn primary" type="submit">${submit}</button></div></form></div>`; document.getElementById('modal-close').onclick=closeModal;document.getElementById('modal-cancel').onclick=closeModal; }
 function closeModal(){modalRoot.innerHTML=''}
@@ -196,6 +253,216 @@ function appointmentModal(id) { const a=state.appointments.find(x=>x.id===id),c=
 function clientModal(id=null) { const data=id?client(id):{}; modal(id?'Edit client':'Add a client','Keep useful client information close to the front desk.',`<label>Full name<input name="name" required value="${data.name||''}" placeholder="Client’s full name"></label><div class="form-row"><label>Phone<input name="phone" required value="${data.phone||''}" placeholder="+91"></label><label>Email<input name="email" type="email" value="${data.email||''}" placeholder="name@example.com"></label></div><label>Notes & preferences<textarea name="note" placeholder="Preferences, allergies, special requests">${data.note||''}</textarea></label>`,id?'Save changes':'Add client'); document.getElementById('modal-form').onsubmit=e=>{e.preventDefault();let f=new FormData(e.target),record={...data,id:data.id||nextId('clients'),name:f.get('name'),phone:f.get('phone'),email:f.get('email'),note:f.get('note'),visits:data.visits||0,spent:data.spent||0,branch:data.branch||state.activeBranch};if(id)Object.assign(data,record);else state.clients.push(record);persist();closeModal();render();alertToast(id?'Client updated.':'Client added.');}; }
 function serviceModal(id=null) { const data=id?service(id):{}; modal(id?'Edit service':'Add a service','Set a clear price and duration for consistent checkout.',`<label>Service name<input name="name" required value="${data.name||''}" placeholder="e.g. Root touch-up"></label><div class="form-row"><label>Category<input name="category" required value="${data.category||''}" placeholder="Hair, skin, nails…"></label><label>Duration (minutes)<input name="duration" type="number" required value="${data.duration||60}"></label></div><label>Price (₹)<input name="price" type="number" required value="${data.price||''}"></label>`,id?'Save changes':'Add service'); document.getElementById('modal-form').onsubmit=e=>{e.preventDefault();let f=new FormData(e.target),record={...data,id:data.id||nextId('services'),name:f.get('name'),category:f.get('category'),duration:Number(f.get('duration')),price:Number(f.get('price')),icon:data.icon||'✦'};if(id)Object.assign(data,record);else state.services.push(record);persist();closeModal();render();alertToast(id?'Service updated.':'Service added.');}; }
 function staffModal(id=null) { const data=id?staff(id):{}; const specialties=['Hair specialist','Skin specialist','Makeup artist','Nail specialist','Spa & wellness therapist','Salon operations','Other']; const currentSpecialty=specialties.includes(data.speciality)?data.speciality:(data.role||'').toLowerCase().includes('nail')?'Nail specialist':(data.role||'').toLowerCase().includes('skin')?'Skin specialist':(data.role||'').toLowerCase().includes('manager')?'Salon operations':(data.role||'').toLowerCase().includes('stylist')?'Hair specialist':''; modal(id?'Edit team member':'Add team member','Team access and performance are scoped to this branch.',`<label>Full name<input name="name" required value="${data.name||''}"></label><div class="form-row"><label>Role<input name="role" required value="${data.role||''}" placeholder="Senior stylist"></label><label>Speciality<select name="speciality" required><option value="" disabled ${currentSpecialty?'':'selected'}>Choose a speciality</option>${specialties.map(specialty=>`<option value="${specialty}" ${currentSpecialty===specialty?'selected':''}>${specialty}</option>`).join('')}</select></label></div>`,id?'Save changes':'Add team member'); document.getElementById('modal-form').onsubmit=e=>{e.preventDefault();let f=new FormData(e.target),record={...data,id:data.id||nextId('staff'),name:f.get('name'),role:f.get('role'),speciality:f.get('speciality'),sales:data.sales||0,target:data.target||0,branch:data.branch||state.activeBranch,initials:initials(f.get('name'))};if(id)Object.assign(data,record);else state.staff.push(record);persist();closeModal();render();alertToast(id?'Team member updated.':'Team member added.');}; }
+function staffModal(id = null) {
+  const data = id ? staff(id) : {};
+  const departments = ['Hair', 'Skin', 'Nails', 'Makeup', 'Spa & wellness', 'Salon operations', 'Other'];
+  const savedDepartment = data.department || data.speciality || '';
+  const currentDepartment = departments.includes(savedDepartment) ? savedDepartment : (data.role || '').toLowerCase().includes('nail') ? 'Nails' : (data.role || '').toLowerCase().includes('skin') ? 'Skin' : (data.role || '').toLowerCase().includes('makeup') ? 'Makeup' : (data.role || '').toLowerCase().includes('manager') ? 'Salon operations' : (data.role || '').toLowerCase().includes('stylist') ? 'Hair' : '';
+  modal(id ? 'Edit team member' : 'Add team member', 'Team access and performance are scoped to this branch.', `<label>Full name<input name="name" required value="${data.name || ''}"></label><div class="form-row"><label>Role<input name="role" required value="${data.role || ''}" placeholder="Senior stylist"></label><label>Department<select name="department" required><option value="" disabled ${currentDepartment ? '' : 'selected'}>Choose a department</option>${departments.map(department => `<option value="${department}" ${currentDepartment === department ? 'selected' : ''}>${department}</option>`).join('')}</select></label></div><label class="online-check"><input name="mobileAppAccess" type="checkbox" ${data.mobileAppAccess ? 'checked' : ''}> <span>Give access to the staff mobile app</span></label>`, id ? 'Save changes' : 'Add team member');
+  document.getElementById('modal-form').onsubmit = event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const department = form.get('department');
+    const record = { ...data, id: data.id || nextId('staff'), name: form.get('name'), role: form.get('role'), department, speciality: department, mobileAppAccess: form.get('mobileAppAccess') === 'on', sales: data.sales || 0, target: data.target || 0, branch: data.branch || state.activeBranch, initials: initials(form.get('name')) };
+    if (id) Object.assign(data, record); else state.staff.push(record);
+    persist(); closeModal(); render(); alertToast(id ? 'Team member updated.' : 'Team member added.');
+  };
+}
+
+function settings() {
+  const branch = currentBranch();
+  layout(`${pageHead('GROUP SETTINGS', 'Settings', 'Control your salon group, branches, team access, and invoicing.')}<div class="settings-grid"><article class="setting-card"><h3>Salon group</h3><p>${state.organisation.name} is the organisation that owns and manages every branch.</p><button class="btn secondary" data-action="organisation">Edit group details</button></article><article class="setting-card"><h3>Branches</h3><p>${state.branches.length} active branches. Each branch has its own appointments, team, stock, and reports.</p><button class="btn secondary" data-action="branch">Manage branches</button></article><article class="setting-card"><h3>User management</h3><p>Control who has access to the staff mobile app at ${branch.name}.</p><button class="btn secondary" id="manage-users">Manage users</button></article><article class="setting-card"><h3>Tax & invoicing</h3><p>GST is set at ${state.organisation.tax}%. This is automatically applied during checkout.</p><button class="btn secondary" data-action="tax">Edit tax settings</button></article><article class="setting-card"><h3>Current branch</h3><p>${branch.name}, ${branch.city} is your active workspace.</p><button class="btn secondary" id="branch-switch-settings">Switch branch</button></article></div>`);
+  document.getElementById('manage-users')?.addEventListener('click', userManagementModal);
+}
+
+function userManagementModal() {
+  const members = local('staff');
+  modal('User management', `Choose which ${currentBranch().name} team members can sign in to the staff mobile app.`, `<div class="user-management-list">${members.length ? members.map(member => `<label class="user-management-user"><span class="avatar">${member.initials}</span><span><strong>${member.name}</strong><small>${member.role}</small></span><input type="checkbox" name="mobile-user" value="${member.id}" ${member.mobileAppAccess ? 'checked' : ''}><b>Mobile access</b></label>`).join('') : '<div class="empty">Add a team member before assigning mobile access.</div>'}</div>`, 'Save access');
+  document.getElementById('modal-form').onsubmit = event => {
+    event.preventDefault();
+    const allowed = new Set(new FormData(event.target).getAll('mobile-user').map(Number));
+    members.forEach(member => { member.mobileAppAccess = allowed.has(member.id); });
+    persist(); closeModal(); render(); alertToast('Mobile app access updated.');
+  };
+}
+
+function settings() {
+  const branch = currentBranch();
+  const multiBranch = state.organisation.multiBranch;
+  layout(`${pageHead('GROUP SETTINGS', 'Settings', 'Control your salon group, branches, team access, and invoicing.')}<div class="settings-grid"><article class="setting-card"><h3>Salon group</h3><p>${state.organisation.name} is the organisation that owns and manages every branch.</p><button class="btn secondary" data-action="organisation">Edit group details</button></article><article class="setting-card"><h3>Branches</h3><p>${multiBranch ? 'Use multiple branches to manage separate locations and their day-to-day operations.' : 'Run Salon Genie as one location without a branch selector.'}</p><div class="branch-mode-switch" role="group" aria-label="Branch setup"><button class="${multiBranch ? '' : 'active'}" data-branch-mode="single">One branch</button><button class="${multiBranch ? 'active' : ''}" data-branch-mode="multiple">Multiple branches</button></div>${multiBranch ? '<button class="btn secondary" id="manage-branches">Manage branches</button>' : ''}</article><article class="setting-card"><h3>User management</h3><p>Control who has access to the staff mobile app at ${branch.name}.</p><button class="btn secondary" id="manage-users">Manage users</button></article><article class="setting-card"><h3>Tax & invoicing</h3><p>GST is set at ${state.organisation.tax}%. This is automatically applied during checkout.</p><button class="btn secondary" data-action="tax">Edit tax settings</button></article><article class="setting-card"><h3>Current location</h3><p>${branch.name}, ${branch.city} is your active workspace.</p>${multiBranch ? '<button class="btn secondary" id="branch-switch-settings">Switch branch</button>' : ''}</article></div>`);
+  document.getElementById('manage-users')?.addEventListener('click', userManagementModal);
+  document.getElementById('manage-branches')?.addEventListener('click', branchManagementModal);
+  document.querySelectorAll('[data-branch-mode]').forEach(button => button.addEventListener('click', () => { state.organisation.multiBranch = button.dataset.branchMode === 'multiple'; persist(); render(); alertToast(state.organisation.multiBranch ? 'Multiple branches enabled.' : 'One branch mode enabled.'); }));
+}
+
+function branchManagementModal() {
+  modal('Manage branches', 'Each branch keeps its own appointments, team, stock, and reporting.', `<div class="branch-management-list">${state.branches.map(branch => `<div><span><strong>${branch.name}</strong><small>${branch.city} · ${branch.code}</small></span>${branch.id === state.activeBranch ? '<b>Current</b>' : ''}</div>`).join('')}</div><button class="btn secondary full" type="button" id="add-branch-from-manager">Add branch</button>`, 'Close');
+  document.getElementById('modal-cancel')?.remove();
+  document.getElementById('modal-form').onsubmit = event => { event.preventDefault(); closeModal(); };
+  document.getElementById('add-branch-from-manager')?.addEventListener('click', branchModal);
+}
+
+const expenseCategories = [
+  { key: 'staffSalary', label: 'Staff salaries' },
+  { key: 'rent', label: 'Rent' },
+  { key: 'products', label: 'Products & supplies' },
+  { key: 'utilities', label: 'Electricity & water' },
+  { key: 'maintenance', label: 'Maintenance' },
+  { key: 'marketing', label: 'Marketing' },
+  { key: 'eventsIncentives', label: 'Events & staff incentives' },
+  { key: 'dayToDay', label: 'Day-to-day expenses' },
+  { key: 'clientRelated', label: 'Client-related expenses' },
+  { key: 'other', label: 'Other expenses' }
+];
+
+function branchExpenses() {
+  const saved = state.expenses[state.activeBranch] || {};
+  return Object.fromEntries(expenseCategories.map(category => [category.key, Number(saved[category.key]) || 0]));
+}
+
+function totalExpenses(expenses) {
+  return expenseCategories.reduce((total, category) => total + Number(expenses[category.key] || 0), 0);
+}
+
+function settings() {
+  const branch = currentBranch();
+  const multiBranch = state.organisation.multiBranch;
+  const expenses = branchExpenses();
+  layout(`${pageHead('GROUP SETTINGS', 'Settings', 'Control your salon group, branches, team access, expenses, and invoicing.')}<div class="settings-grid"><article class="setting-card"><h3>Salon group</h3><p>${state.organisation.name} is the organisation that owns and manages every branch.</p><button class="btn secondary" data-action="organisation">Edit group details</button></article><article class="setting-card"><h3>Branches</h3><p>${multiBranch ? 'Use multiple branches to manage separate locations and their day-to-day operations.' : 'Run Salon Genie as one location without a branch selector.'}</p><div class="branch-mode-switch" role="group" aria-label="Branch setup"><button class="${multiBranch ? '' : 'active'}" data-branch-mode="single">One branch</button><button class="${multiBranch ? 'active' : ''}" data-branch-mode="multiple">Multiple branches</button></div>${multiBranch ? '<button class="btn secondary" id="manage-branches">Manage branches</button>' : ''}</article><article class="setting-card"><h3>User management</h3><p>Control who has access to the staff mobile app at ${branch.name}.</p><button class="btn secondary" id="manage-users">Manage users</button></article><article class="setting-card"><h3>Expenses</h3><p>Monthly operating costs for ${branch.name}: <strong>${money(totalExpenses(expenses))}</strong></p><button class="btn secondary" id="manage-expenses">Set expenses</button></article><article class="setting-card"><h3>Tax & invoicing</h3><p>GST is set at ${state.organisation.tax}%. This is automatically applied during checkout.</p><button class="btn secondary" data-action="tax">Edit tax settings</button></article><article class="setting-card"><h3>Current location</h3><p>${branch.name}, ${branch.city} is your active workspace.</p>${multiBranch ? '<button class="btn secondary" id="branch-switch-settings">Switch branch</button>' : ''}</article></div>`);
+  document.getElementById('manage-users')?.addEventListener('click', userManagementModal);
+  document.getElementById('manage-branches')?.addEventListener('click', branchManagementModal);
+  document.getElementById('manage-expenses')?.addEventListener('click', expensesModal);
+  document.querySelectorAll('[data-branch-mode]').forEach(button => button.addEventListener('click', () => { state.organisation.multiBranch = button.dataset.branchMode === 'multiple'; persist(); render(); alertToast(state.organisation.multiBranch ? 'Multiple branches enabled.' : 'One branch mode enabled.'); }));
+}
+
+function expensesModal() {
+  const expenses = branchExpenses();
+  modal('Monthly expenses', `Record the regular operating costs for ${currentBranch().name}. This will feed into your reports later.`, `<div class="expense-form">${expenseCategories.map(category => `<label>${category.label}<input name="${category.key}" type="number" min="0" value="${expenses[category.key] || ''}" placeholder="0"></label>`).join('')}</div><div class="expense-total"><span>Total monthly expenses</span><strong id="expense-total-value">${money(totalExpenses(expenses))}</strong></div>`, 'Save expenses');
+  const form = document.getElementById('modal-form');
+  const updateTotal = () => { const fields = new FormData(form); const total = expenseCategories.reduce((sum, category) => sum + Number(fields.get(category.key) || 0), 0); document.getElementById('expense-total-value').textContent = money(total); };
+  form.querySelectorAll('input[type="number"]').forEach(input => input.addEventListener('input', updateTotal));
+  form.onsubmit = event => {
+    event.preventDefault();
+    const fields = new FormData(event.target);
+    state.expenses[state.activeBranch] = Object.fromEntries(expenseCategories.map(category => [category.key, Number(fields.get(category.key) || 0)]));
+    persist(); closeModal(); render(); alertToast('Monthly expenses updated.');
+  };
+}
+
+const localFileStore = {
+  maxFileSize: 100 * 1024 * 1024,
+  retentionDays: 90,
+  open() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('salon-genie-local-files', 1);
+      request.onupgradeneeded = () => request.result.createObjectStore('files', { keyPath: 'id' });
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async list() {
+    const database = await this.open();
+    const files = await new Promise((resolve, reject) => {
+      const request = database.transaction('files', 'readonly').objectStore('files').getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+    const now = Date.now();
+    const expired = files.filter(file => file.expiresAt <= now);
+    await Promise.all(expired.map(file => this.remove(file.id)));
+    return files.filter(file => file.expiresAt > now).sort((first, second) => second.createdAt - first.createdAt);
+  },
+  async upload(file, category) {
+    if (file.size > this.maxFileSize) throw new Error('Files must be 100 MB or smaller.');
+    const database = await this.open();
+    const item = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, name: file.name, size: file.size, type: file.type, category, file, createdAt: Date.now(), expiresAt: Date.now() + this.retentionDays * 86400000 };
+    await new Promise((resolve, reject) => {
+      const request = database.transaction('files', 'readwrite').objectStore('files').put(item);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+  },
+  async remove(id) {
+    const database = await this.open();
+    await new Promise((resolve, reject) => {
+      const request = database.transaction('files', 'readwrite').objectStore('files').delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+    database.close();
+  }
+};
+
+const safeFileName = value => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+const localFileSize = bytes => bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+const localFileDate = value => new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+
+async function localDataStoreModal() {
+  try {
+    const files = await localFileStore.list();
+    modal('Local data store', 'Keep critical files, bills, and other records on this device for up to 90 days. Each file can be up to 100 MB.', `<label>File category<select name="fileCategory"><option>Critical file</option><option>Bill</option><option>Other record</option></select></label><label>Choose file<input name="localFile" type="file" required></label><div class="local-file-list"><strong>Stored files</strong>${files.length ? files.map(file => `<div><span><b>${safeFileName(file.name)}</b><small>${file.category} · ${localFileSize(file.size)} · Deletes ${localFileDate(file.expiresAt)}</small></span><button class="text-link" type="button" data-delete-local-file="${file.id}">Delete</button></div>`).join('') : '<p>No files stored on this device.</p>'}</div>`, 'Upload file');
+    const form = document.getElementById('modal-form');
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const file = form.querySelector('[name="localFile"]').files[0];
+      if (!file) return;
+      try { await localFileStore.upload(file, new FormData(form).get('fileCategory')); await localDataStoreModal(); alertToast('File stored locally for 90 days.'); }
+      catch (error) { alertToast(error.message || 'This file could not be stored locally.'); }
+    };
+    document.querySelectorAll('[data-delete-local-file]').forEach(button => button.addEventListener('click', async () => { await localFileStore.remove(button.dataset.deleteLocalFile); await localDataStoreModal(); alertToast('Local file deleted.'); }));
+  } catch { alertToast('Local file storage is unavailable in this browser.'); }
+}
+
+function googleProfileSyncModal() {
+  modal('Google Business Profile sync', 'Connect the Google account that owns your Business Profile to manage your salon information, services, posts, and reviews from Salon Genie.', '<div class="google-sync-note"><strong>Not connected</strong><span>Secure Google sign-in will be enabled when production Google credentials are configured.</span></div>', 'Close');
+  document.getElementById('modal-form').onsubmit = event => { event.preventDefault(); closeModal(); };
+}
+
+function organisationModal() {
+  const organisation = state.organisation;
+  modal('Salon group details', 'These contact details are required for every Salon Genie setup.', `<label>Group name<input name="name" required value="${organisation.name || ''}"></label><div class="form-row"><label>Phone number<input name="phone" type="tel" required value="${organisation.phone || ''}" placeholder="+91"></label><label>WhatsApp number<input name="whatsapp" type="tel" required value="${organisation.whatsapp || ''}" placeholder="+91"></label></div><label>Email address<input name="email" type="email" required value="${organisation.email || ''}" placeholder="name@salon.com"></label>`, 'Save changes');
+  document.getElementById('modal-form').onsubmit = event => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    Object.assign(state.organisation, { name: form.get('name'), phone: form.get('phone'), whatsapp: form.get('whatsapp'), email: form.get('email') });
+    persist(); closeModal(); render(); alertToast('Salon group details updated.');
+  };
+}
+
+function settings() {
+  const branch = currentBranch();
+  const expenses = branchExpenses();
+  layout(`${pageHead('GROUP SETTINGS', 'Settings', 'Control your salon group, branches, team access, files, expenses, and invoicing.')}<div class="settings-grid"><article class="setting-card"><h3>Salon group</h3><p>${state.organisation.name} is the organisation that owns and manages every branch.</p><button class="btn secondary" data-action="organisation">Edit group details</button></article><article class="setting-card"><h3>Branches</h3><p>${state.organisation.multiBranch ? 'Manage your salon locations and switch between their workspaces.' : 'Run Salon Genie as one location without a branch selector.'}</p><div class="branch-mode-switch" role="group" aria-label="Branch setup"><button class="${state.organisation.multiBranch ? '' : 'active'}" data-branch-mode="single">One branch</button><button class="${state.organisation.multiBranch ? 'active' : ''}" id="manage-branches">Manage branches</button></div></article><article class="setting-card"><h3>User management</h3><p>Control who has access to the staff mobile app at ${branch.name}.</p><button class="btn secondary" id="manage-users">Manage users</button></article><article class="setting-card"><h3>Local data store</h3><p>Store critical files and bills on this device for 90 days. Files can be up to 100 MB.</p><button class="btn secondary" id="open-local-data-store">Manage files</button></article><article class="setting-card"><h3>Google Business Profile</h3><p>Connect your Google profile to manage salon information and reviews.</p><button class="btn secondary" id="google-profile-sync">Connect Google profile</button></article><article class="setting-card"><h3>Expenses</h3><p>Monthly operating costs for ${branch.name}: <strong>${money(totalExpenses(expenses))}</strong></p><button class="btn secondary" id="manage-expenses">Set expenses</button></article><article class="setting-card"><h3>Tax & invoicing</h3><p>GST is set at ${state.organisation.tax}%. This is automatically applied during checkout.</p><button class="btn secondary" data-action="tax">Edit tax settings</button></article><article class="setting-card"><h3>Current location</h3><p>${branch.name}, ${branch.city} is your active workspace.</p>${state.organisation.multiBranch ? '<button class="btn secondary" id="branch-switch-settings">Switch branch</button>' : ''}</article></div>`);
+  document.getElementById('manage-users')?.addEventListener('click', userManagementModal);
+  document.getElementById('manage-expenses')?.addEventListener('click', expensesModal);
+  document.getElementById('open-local-data-store')?.addEventListener('click', localDataStoreModal);
+  document.getElementById('google-profile-sync')?.addEventListener('click', googleProfileSyncModal);
+  document.getElementById('manage-branches')?.addEventListener('click', () => confirmBranchMode('manage'));
+  document.querySelector('[data-branch-mode="single"]')?.addEventListener('click', () => confirmBranchMode('single'));
+}
+
+function confirmBranchMode(mode) {
+  const manageBranches = mode === 'manage';
+  modal(manageBranches ? 'Manage branches?' : 'Use one branch?', manageBranches ? 'This enables the branch selector and lets you manage separate salon locations.' : 'This hides the branch selector and keeps you focused on your current location. Your existing branch data will remain safe.', '<p class="branch-confirmation-note">You can change this setting again at any time.</p>', manageBranches ? 'Continue' : 'Use one branch');
+  document.getElementById('modal-form').onsubmit = event => {
+    event.preventDefault();
+    state.organisation.multiBranch = manageBranches;
+    persist();
+    if (manageBranches) { closeModal(); branchManagementModal(); } else { closeModal(); render(); alertToast('One branch mode enabled.'); }
+  };
+}
+
+function branchManagementModal() {
+  modal('Manage branches', 'Each branch keeps its own appointments, team, stock, and reporting.', `<div class="branch-management-list">${state.branches.map(branch => `<div><span><strong>${branch.name}</strong><small>${branch.city} · ${branch.code}</small></span>${branch.id === state.activeBranch ? '<b>Current</b>' : ''}</div>`).join('')}</div><button class="btn secondary full" type="button" id="add-branch-from-manager">Add branch</button>`, 'Close');
+  document.getElementById('modal-cancel')?.remove();
+  const returnToSettings = () => { closeModal(); render(); };
+  document.getElementById('modal-close').onclick = returnToSettings;
+  document.getElementById('modal-form').onsubmit = event => { event.preventDefault(); returnToSettings(); };
+  document.getElementById('add-branch-from-manager')?.addEventListener('click', branchModal);
+}
+
 function inventoryModal() { modal('Add product','Add a product to the inventory of this branch.',`<label>Product name<input name="name" required></label><div class="form-row"><label>SKU<input name="sku" required placeholder="SKU-001"></label><label>Category<input name="category" required placeholder="Hair care"></label></div><div class="form-row"><label>Current stock<input name="stock" type="number" value="0"></label><label>Reorder at<input name="reorder" type="number" value="5"></label></div><label>Unit value (₹)<input name="unit" type="number" required></label>`,'Add product');document.getElementById('modal-form').onsubmit=e=>{e.preventDefault();let f=new FormData(e.target);state.inventory.push({id:nextId('inventory'),name:f.get('name'),sku:f.get('sku'),category:f.get('category'),stock:Number(f.get('stock')),reorder:Number(f.get('reorder')),unit:Number(f.get('unit')),branch:state.activeBranch});persist();closeModal();render();alertToast('Product added to inventory.');}; }
 function purchaseOrderModal() { const products=local('inventory'); modal('Create purchase order','Record stock that is being ordered, so forecasts include it before it arrives.',`<label>Supplier<input name="supplier" required placeholder="Supplier name"></label><div class="form-row"><label>Product<select name="inventoryId" required>${optionList(products,'',product=>`${product.name} · ${product.stock} in stock`)}</select></label><label>Quantity<input name="quantity" type="number" min="1" required value="1"></label></div><div class="form-row"><label>Expected delivery<input name="expectedDate" type="date" required value="2026-08-14"></label><label>Status<select name="status"><option>Draft</option><option selected>Ordered</option></select></label></div>`,'Create order'); document.getElementById('modal-form').onsubmit=event=>{event.preventDefault();const form=new FormData(event.target);state.purchaseOrders.push({id:nextId('purchaseOrders'),code:`PO-${2050+nextId('purchaseOrders')}`,supplier:form.get('supplier'),expectedDate:form.get('expectedDate'),status:form.get('status'),branch:state.activeBranch,lines:[{inventoryId:Number(form.get('inventoryId')),quantity:Number(form.get('quantity'))}]});persist();closeModal();render();alertToast('Purchase order created and included in the inventory plan.');};}
 function restock(id){const item=state.inventory.find(x=>x.id===id);item.stock=item.reorder+5;persist();render();alertToast(`${item.name} restocked.`)}
